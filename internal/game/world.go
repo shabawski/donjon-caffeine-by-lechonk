@@ -1,0 +1,194 @@
+package game
+
+// Tile est le type d'une case de la carte.
+type Tile int
+
+const (
+	TileWall Tile = iota
+	TileFloor
+	TileStairs
+)
+
+// Glyph renvoie le caractère représentant la tuile.
+func (t Tile) Glyph() rune {
+	switch t {
+	case TileFloor:
+		return '.'
+	case TileStairs:
+		return '>'
+	default:
+		return '#'
+	}
+}
+
+const (
+	// DefaultWidth et DefaultHeight sont les dimensions d'un étage (choisies
+	// pour tenir dans un terminal de 80x24 avec le panneau HUD à droite).
+	DefaultWidth  = 44
+	DefaultHeight = 22
+	// MaxDepth est le nombre d'étages du donjon. Le boss garde le dernier.
+	MaxDepth = 10
+)
+
+// World est un étage du donjon.
+type World struct {
+	Width, Height int
+	Depth         int // 1..MaxDepth
+	Tiles         []Tile
+	StairsX       int
+	StairsY       int
+	HasStairs     bool // false au dernier étage (le boss y campe à la place)
+}
+
+// InBounds indique si (x, y) est dans la carte.
+func (w *World) InBounds(x, y int) bool {
+	return x >= 0 && y >= 0 && x < w.Width && y < w.Height
+}
+
+// At renvoie la tuile en (x, y) ; hors limites vaut TileWall.
+func (w *World) At(x, y int) Tile {
+	if !w.InBounds(x, y) {
+		return TileWall
+	}
+	return w.Tiles[y*w.Width+x]
+}
+
+// Set pose la tuile en (x, y) si dans les limites.
+func (w *World) Set(x, y int, t Tile) {
+	if w.InBounds(x, y) {
+		w.Tiles[y*w.Width+x] = t
+	}
+}
+
+// IsWalkable indique si une case est franchissable (sol ou escalier).
+func (w *World) IsWalkable(x, y int) bool {
+	switch w.At(x, y) {
+	case TileFloor, TileStairs:
+		return true
+	default:
+		return false
+	}
+}
+
+// RandomFloor renvoie une position de sol aléatoire (utile pour les spawns).
+func (w *World) RandomFloor(rng *RNG) (x, y int, ok bool) {
+	for tries := 0; tries < 200; tries++ {
+		x = rng.Intn(w.Width)
+		y = rng.Intn(w.Height)
+		if w.At(x, y) == TileFloor {
+			return x, y, true
+		}
+	}
+	// Repli : scan complet.
+	for y = 0; y < w.Height; y++ {
+		for x = 0; x < w.Width; x++ {
+			if w.At(x, y) == TileFloor {
+				return x, y, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
+type room struct{ x, y, w, h int }
+
+func (r room) center() (int, int) { return r.x + r.w/2, r.y + r.h/2 }
+
+// intersects avec une marge de 1 pour garder au moins un mur entre les salles.
+func (r room) intersects(o room) bool {
+	return r.x-1 <= o.x+o.w && o.x-1 <= r.x+r.w &&
+		r.y-1 <= o.y+o.h && o.y-1 <= r.y+r.h
+}
+
+// GenerateWorld crée un étage procédural : des salles disjointes reliées par
+// des couloirs en L, plus un escalier vers le bas (absent au dernier étage).
+func GenerateWorld(rng *RNG, depth, width, height int) *World {
+	w := &World{Width: width, Height: height, Depth: depth, Tiles: make([]Tile, width*height)}
+	for i := range w.Tiles {
+		w.Tiles[i] = TileWall
+	}
+
+	rooms := placeRooms(rng, width, height)
+	for i, r := range rooms {
+		carveRoom(w, r)
+		if i > 0 {
+			carveCorridor(w, rng, rooms[i-1], r)
+		}
+	}
+
+	if depth < MaxDepth {
+		last := rooms[len(rooms)-1]
+		w.StairsX, w.StairsY = last.center()
+		w.Set(w.StairsX, w.StairsY, TileStairs)
+		w.HasStairs = true
+	}
+	return w
+}
+
+func placeRooms(rng *RNG, width, height int) []room {
+	const maxRooms = 9
+	rooms := make([]room, 0, maxRooms)
+	for tries := 0; tries < 200 && len(rooms) < maxRooms; tries++ {
+		rw := rng.IntRange(4, 9)
+		rh := rng.IntRange(3, 7)
+		if width-rw-2 < 1 || height-rh-2 < 1 {
+			continue
+		}
+		x := rng.IntRange(1, width-rw-1)
+		y := rng.IntRange(1, height-rh-1)
+		r := room{x, y, rw, rh}
+		ok := true
+		for _, o := range rooms {
+			if r.intersects(o) {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			rooms = append(rooms, r)
+		}
+	}
+	return rooms
+}
+
+func carveRoom(w *World, r room) {
+	for y := r.y; y < r.y+r.h; y++ {
+		for x := r.x; x < r.x+r.w; x++ {
+			w.Set(x, y, TileFloor)
+		}
+	}
+}
+
+func carveCorridor(w *World, rng *RNG, a, b room) {
+	ax, ay := a.center()
+	bx, by := b.center()
+	if rng.Intn(2) == 0 {
+		carveH(w, ax, bx, ay)
+		carveV(w, ay, by, bx)
+	} else {
+		carveV(w, ay, by, ax)
+		carveH(w, ax, bx, by)
+	}
+}
+
+func carveH(w *World, x1, x2, y int) {
+	if x1 > x2 {
+		x1, x2 = x2, x1
+	}
+	for x := x1; x <= x2; x++ {
+		if w.At(x, y) == TileWall {
+			w.Set(x, y, TileFloor)
+		}
+	}
+}
+
+func carveV(w *World, y1, y2, x int) {
+	if y1 > y2 {
+		y1, y2 = y2, y1
+	}
+	for y := y1; y <= y2; y++ {
+		if w.At(x, y) == TileWall {
+			w.Set(x, y, TileFloor)
+		}
+	}
+}
