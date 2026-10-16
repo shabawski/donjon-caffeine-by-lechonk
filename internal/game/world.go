@@ -22,13 +22,29 @@ func (t Tile) Glyph() rune {
 }
 
 const (
-	// DefaultWidth et DefaultHeight sont les dimensions d'un étage (choisies
-	// pour tenir dans un terminal de 80x24 avec le panneau HUD à droite).
-	DefaultWidth  = 44
-	DefaultHeight = 22
+	// DefaultWidth et DefaultHeight sont les dimensions d'un étage par défaut.
+	// Pensées pour remplir un terminal plein écran (80x40) tout en laissant
+	// de la marge pour un viewport plus petit.
+	DefaultWidth  = 80
+	DefaultHeight = 40
+	// MinWidth/MinHeight bornent les dimensions demandées à NewStateSized.
+	MinWidth  = 20
+	MinHeight = 10
 	// MaxDepth est le nombre d'étages du donjon. Le boss garde le dernier.
 	MaxDepth = 10
 )
+
+// ClampWorldSize borne les dimensions demandées entre MinWidth/MinHeight et
+// les valeurs fournies (pas de borne haute : un grand étage reste valide).
+func ClampWorldSize(w, h int) (int, int) {
+	if w < MinWidth {
+		w = MinWidth
+	}
+	if h < MinHeight {
+		h = MinHeight
+	}
+	return w, h
+}
 
 // World est un étage du donjon.
 type World struct {

@@ -15,6 +15,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.updateViewport()
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -102,8 +103,10 @@ func (m *Model) updatePlaying(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // afterPlayerAction détecte la fin de partie : sauvegarde le score une fois
-// et bascule sur l'écran de fin.
+// et bascule sur l'écran de fin. Recalcule aussi le viewport pour que la
+// caméra suive le joueur.
 func (m *Model) afterPlayerAction() {
+	m.updateViewport()
 	if m.state.Phase != game.PhasePlaying && !m.scoreSaved {
 		m.scoreSaved = true
 		m.screen = screenGameOver
@@ -119,6 +122,7 @@ func (m *Model) updateGameOver(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = screenPlaying
 		m.scoreSaved = false
 		m.lastDX, m.lastDY = 1, 0
+		m.updateViewport()
 	case "s":
 		m.screen = screenScores
 	case "q", "esc", "ctrl+c":

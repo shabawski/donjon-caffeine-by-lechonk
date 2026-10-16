@@ -28,31 +28,46 @@ func (m *Model) View() string {
 	return ""
 }
 
-// viewGame rend le titre, la carte à gauche et le HUD/journal à droite.
+// viewGame rend le titre, la carte (viewport centré sur le joueur) à gauche,
+// le HUD à droite, et un pied de page avec les raccourcis clavier.
 func (m *Model) viewGame() string {
 	title := styleTitle.Render(fmt.Sprintf("☕ Donjon Caféiné — étage %d/%d", m.state.World.Depth, game.MaxDepth))
-	body := lipgloss.JoinHorizontal(lipgloss.Top, renderMap(m.state), m.renderHUD())
-	return title + "\n" + body
+	mapW := m.width - hudWidth - 2
+	if mapW < m.viewW {
+		mapW = m.viewW
+	}
+	mapBlock := lipgloss.NewStyle().Width(mapW).Render(m.renderViewport())
+	body := lipgloss.JoinHorizontal(lipgloss.Top, mapBlock, m.renderHUD())
+	footer := styleDim.Render("ZQSD/HJKL/flèches: bouger · f: feu · g: escalier · i: inventaire · ?: aide · Q: quitter")
+	return title + "\n" + body + "\n" + footer
 }
 
-// renderMap dessine la carte avec fog of war : cases jamais vues en espace,
+// renderViewport dessine la portion du monde visible dans le viewport,
+// centrée sur le joueur. Fog of war : cases jamais vues en espace,
 // cases explorées mais hors vue en atténué, cases visibles en couleur.
-func renderMap(s *game.State) string {
+func (m *Model) renderViewport() string {
+	s := m.state
 	var b strings.Builder
-	for y := 0; y < s.World.Height; y++ {
-		for x := 0; x < s.World.Width; x++ {
-			i := y*s.World.Width + x
+	for vy := 0; vy < m.viewH; vy++ {
+		wy := m.viewY + vy
+		for vx := 0; vx < m.viewW; vx++ {
+			wx := m.viewX + vx
+			if !s.World.InBounds(wx, wy) {
+				b.WriteString(" ")
+				continue
+			}
+			i := wy*s.World.Width + wx
 			switch {
 			case !s.FOV.Explored[i]:
 				b.WriteString(" ")
 			case !s.FOV.Visible[i]:
 				b.WriteString(styleDim.Render(string(s.World.Tiles[i].Glyph())))
 			default:
-				r, st := glyphAt(s, x, y)
+				r, st := glyphAt(s, wx, wy)
 				b.WriteString(st.Render(string(r)))
 			}
 		}
-		if y < s.World.Height-1 {
+		if vy < m.viewH-1 {
 			b.WriteString("\n")
 		}
 	}
@@ -83,27 +98,40 @@ func glyphAt(s *game.State, x, y int) (rune, lipgloss.Style) {
 }
 
 // renderHUD rend la colonne de droite : statistiques, équipement, journal.
+// Le journal occupe tout l'espace vertical restant dans le viewport.
+// Le rendu produit exactement viewH lignes (sans saut de ligne final) pour
+// que JoinHorizontal aligne correctement la carte et le HUD.
 func (m *Model) renderHUD() string {
 	s := m.state
 	p := &s.Player
-	var b strings.Builder
-	b.WriteString(styleHP.Render(bar(p.HP, p.MaxHP, 12)) + fmt.Sprintf(" PV %d/%d\n", p.HP, p.MaxHP))
-	b.WriteString(styleMana.Render(bar(p.Mana, p.MaxMana, 12)) + fmt.Sprintf(" Mana %d/%d\n", p.Mana, p.MaxMana))
-	b.WriteString(fmt.Sprintf("Niv %d  XP %d/%d\n", p.Level, p.XP, game.XPNeededForLevel(p.Level+1)))
-	b.WriteString(fmt.Sprintf("ATK %d  DEF %d\n", p.EffectiveAttack(), p.EffectiveDefense()))
-	b.WriteString(fmt.Sprintf("Or %d   Kills %d   Tours %d\n", p.Gold, p.Kills, p.Turns))
-	b.WriteString("Arme   " + equipName(p.WeaponName, p.WeaponBonus) + "\n")
-	b.WriteString("Armure " + equipName(p.ArmorName, p.ArmorBonus) + "\n")
-	b.WriteString("\n── Journal ──\n")
-	const logLines = 8
+	lines := make([]string, 0, m.viewH)
+	lines = append(lines, styleHP.Render(bar(p.HP, p.MaxHP, 12))+fmt.Sprintf(" PV %d/%d", p.HP, p.MaxHP))
+	lines = append(lines, styleMana.Render(bar(p.Mana, p.MaxMana, 12))+fmt.Sprintf(" Mana %d/%d", p.Mana, p.MaxMana))
+	lines = append(lines, fmt.Sprintf("Niv %d  XP %d/%d", p.Level, p.XP, game.XPNeededForLevel(p.Level+1)))
+	lines = append(lines, fmt.Sprintf("ATK %d  DEF %d", p.EffectiveAttack(), p.EffectiveDefense()))
+	lines = append(lines, fmt.Sprintf("Or %d   Kills %d   Tours %d", p.Gold, p.Kills, p.Turns))
+	lines = append(lines, "Arme   "+equipName(p.WeaponName, p.WeaponBonus))
+	lines = append(lines, "Armure "+equipName(p.ArmorName, p.ArmorBonus))
+	lines = append(lines, "")
+	lines = append(lines, "── Journal ──")
+	// Le journal occupe tout l'espace vertical restant dans le viewport.
+	const hudHeaderLines = 9 // stats (7) + ligne vide (1) + titre journal (1)
+	logLines := m.viewH - hudHeaderLines
+	if logLines < 3 {
+		logLines = 3
+	}
 	start := len(s.Log) - logLines
 	if start < 0 {
 		start = 0
 	}
 	for _, line := range s.Log[start:] {
-		b.WriteString(styleLog.Render("> "+truncate(line, 36)) + "\n")
+		lines = append(lines, styleLog.Render("> "+truncate(line, hudWidth-4)))
 	}
-	return styleHUD.Render(b.String())
+	// Remplit les lignes restantes pour atteindre exactement viewH lignes.
+	for len(lines) < hudHeaderLines+logLines {
+		lines = append(lines, "")
+	}
+	return styleHUD.Render(strings.Join(lines, "\n"))
 }
 
 // equipName formate une ligne d'équipement (arme/armure).

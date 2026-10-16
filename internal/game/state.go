@@ -50,11 +50,28 @@ type State struct {
 	Turn         int
 	Won          bool
 	CauseOfDeath string
+	worldWidth   int // dimensions d'étage, conservées entre les étages
+	worldHeight  int
 }
 
-// NewState crée une nouvelle partie avec la graine donnée et génère l'étage 1.
+// NewState crée une nouvelle partie avec la graine donnée et génère l'étage 1
+// aux dimensions par défaut (DefaultWidth x DefaultHeight).
 func NewState(seed int64) *State {
-	s := &State{RNG: NewRNG(seed), Seed: seed, Phase: PhasePlaying}
+	return NewStateSized(seed, DefaultWidth, DefaultHeight)
+}
+
+// NewStateSized crée une nouvelle partie avec des dimensions d'étage
+// personnalisées (bornées par ClampWorldSize). Les dimensions sont conservées
+// pour tous les étages de la partie.
+func NewStateSized(seed int64, width, height int) *State {
+	width, height = ClampWorldSize(width, height)
+	s := &State{
+		RNG:         NewRNG(seed),
+		Seed:        seed,
+		Phase:       PhasePlaying,
+		worldWidth:  width,
+		worldHeight: height,
+	}
 	s.Player = Player{
 		Entity:  *NewPlayer(0, 0),
 		Level:   1,
@@ -67,7 +84,7 @@ func NewState(seed int64) *State {
 
 // startFloor génère un étage et y place le joueur, les monstres et les objets.
 func (s *State) startFloor(depth int) {
-	s.World = GenerateWorld(s.RNG, depth, DefaultWidth, DefaultHeight)
+	s.World = GenerateWorld(s.RNG, depth, s.worldWidth, s.worldHeight)
 	s.FOV = NewFOV(s.World.Width * s.World.Height)
 	px, py, _ := s.World.RandomFloor(s.RNG)
 	s.Player.X, s.Player.Y = px, py

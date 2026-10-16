@@ -10,9 +10,14 @@ Un **roguelike dungeon-crawler en terminal**, écrit en Go pur (BubbleTea + Lipg
 ## Lancer le jeu
 
 ```sh
-go run .                 # partie jouable (interface terminal)
+go run .                 # partie jouable (interface terminal plein écran)
 go run . --seed 42       # partie reproductible (même graine = même donjon)
 ```
+
+L'interface occupe **tout le terminal** (plein écran alternatif) et s'adapte
+automatiquement quand tu redimensionnes la fenêtre : la carte est rendue via
+un viewport centré sur le joueur, le panneau HUD à droite ajuste son journal
+à la hauteur disponible.
 
 Ou compiler un binaire :
 
@@ -73,7 +78,7 @@ Une partie complète est jouée automatiquement par un bot, sans terminal :
 
 ```sh
 go run . --demo --seed 42
-# [VICTOIRE] seed=42 étage=10 niveau=8 PV=36/86 or=137 kills=30 tours=22479 score=2274
+# [VICTOIRE] seed=42 étage=10 niveau=7 PV=62/78 or=318 kills=32 tours=13457 score=2631
 ```
 
 Options : `--max-turns 30000` (limite de tours, défaut 30000), `--help` (usage).
@@ -85,11 +90,14 @@ go test ./...
 ```
 
 - `internal/game` : tests unitaires (RNG déterministe, génération procédurale et
-  connexité, FOV/fog of war, combat, IA, progression, transitions victoire/défaite)
+  connexité, FOV/fog of war, combat, IA, progression, transitions victoire/défaite,
+  dimensions d'étage `NewStateSized`/`ClampWorldSize`)
   + tests d'intégration (parties complètes en bot sur 20 graines, victoire et
   défaite de bout en bout).
 - `internal/score` : persistance (ajout, tri, top 10, fichier absent/corrompu).
-- `internal/tui` : smoke tests (rendu, navigation clavier, sauvegarde du score).
+- `internal/tui` : smoke tests (rendu, navigation clavier, sauvegarde du score)
+  + tests du viewport plein écran (caméra centrée sur le joueur, resize,
+  hauteur de vue = hauteur du terminal).
 
 ## Structure du projet
 
@@ -106,8 +114,8 @@ internal/game/        moteur de jeu pur — AUCUNE dépendance TUI, testé unita
   progression.go      XP, niveaux, attaque/défense effectives
   state.go            état de partie, tours, sorts, victoire/défaite, score, journal
   auto.go             bot AutoPlay (mode --demo et tests d'intégration)
-internal/tui/         interface terminal (BubbleTea + Lipgloss)
-  model.go update.go view.go   modèle MVC BubbleTea
+internal/tui/         interface terminal (BubbleTea + Lipgloss), plein écran
+  model.go update.go view.go   modèle MVC BubbleTea + viewport (caméra centrée)
   keys.go             ZQSD/HJKL/flèches → déplacements
   styles.go           styles Lipgloss (variables package-level)
   menu.go             menu principal + tableau des scores

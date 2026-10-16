@@ -3,7 +3,7 @@ package game
 // newTestState construit un State sur une carte manuelle entourée de murs,
 // pour des tests déterministes indépendants de la génération procédurale.
 func newTestState(seed int64, w, h int) *State {
-	s := &State{RNG: NewRNG(seed), Seed: seed, Phase: PhasePlaying}
+	s := &State{RNG: NewRNG(seed), Seed: seed, Phase: PhasePlaying, worldWidth: w, worldHeight: h}
 	s.World = &World{Width: w, Height: h, Depth: 1, Tiles: make([]Tile, w*h)}
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
