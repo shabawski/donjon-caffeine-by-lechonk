@@ -22,7 +22,7 @@ func TestNewState(t *testing.T) {
 	if !s.FOV.Visible[s.Player.Y*s.World.Width+s.Player.X] {
 		t.Fatal("le FOV doit être calculé au spawn")
 	}
-	if len(s.Enemies) < 1 {
+	if s.Entities.Len() < 1 {
 		t.Fatal("des monstres doivent spawner à l'étage 1")
 	}
 	if len(s.Log) < 2 {
@@ -62,23 +62,24 @@ func TestMovePlayerOnFloor(t *testing.T) {
 func TestMovePlayerAttacksEnemy(t *testing.T) {
 	s := newTestState(1, 10, 10)
 	rat := s.addEnemy(KindRat, 2, 1)
-	rat.HP = 1
+	s.Entities.HP[int(rat)] = 1
 	s.Player.Attack = 100
+	xpValue := s.Entities.XPValue[int(rat)] // capturé avant la mort (Compact invalide l'index)
 	if !s.MovePlayer(1, 0) {
 		t.Fatal("attaquer un monstre consomme un tour")
 	}
-	if rat.IsAlive() {
+	if s.Entities.IsAlive(rat) {
 		t.Fatal("le rat avec 1 PV doit mourir")
 	}
 	if s.Player.Kills != 1 {
 		t.Fatalf("kills attendu 1, got %d", s.Player.Kills)
 	}
-	if s.Player.XP != rat.XPValue {
-		t.Fatalf("XP attendu %d, got %d", rat.XPValue, s.Player.XP)
+	if s.Player.XP != xpValue {
+		t.Fatalf("XP attendu %d, got %d", xpValue, s.Player.XP)
 	}
 	// Le monstre mort est retiré au tour suivant des monstres.
-	if len(s.Enemies) != 0 {
-		t.Fatalf("le monstre mort doit être retiré, %d restant(s)", len(s.Enemies))
+	if s.Entities.Len() != 0 {
+		t.Fatalf("le monstre mort doit être retiré, %d restant(s)", s.Entities.Len())
 	}
 }
 
@@ -146,8 +147,8 @@ func TestCastFireballCostsManaAndDamagesArea(t *testing.T) {
 	s := newTestState(1, 15, 15)
 	s.Player.X, s.Player.Y = 7, 7
 	s.Player.Mana = 20
-	rat1 := s.addEnemy(KindRat, 8, 7)
-	rat2 := s.addEnemy(KindRat, 7, 8)
+	s.addEnemy(KindRat, 8, 7)
+	s.addEnemy(KindRat, 7, 8)
 	ComputeFOV(s.World, s.FOV, 7, 7, PlayerViewRange)
 	if !s.CastFireball(0, 0) {
 		t.Fatal("la boule de feu doit être lancée")
@@ -155,9 +156,13 @@ func TestCastFireballCostsManaAndDamagesArea(t *testing.T) {
 	if s.Player.Mana != 20-FireballCost {
 		t.Fatalf("mana attendu %d, got %d", 20-FireballCost, s.Player.Mana)
 	}
-	dmg := FireballBase + 2*s.Player.Level // 10
-	if rat1.HP != 8-dmg || rat2.HP != 8-dmg {
-		t.Fatalf("dégâts de zone attendus %d: rat1=%d rat2=%d", dmg, rat1.HP, rat2.HP)
+	// Fireball niveau 1 = 10 dégâts > 8 PV des rats : les deux meurent et sont
+	// compactés par le tour des monstres. On vérifie via les kills et le registre.
+	if s.Player.Kills != 2 {
+		t.Fatalf("kills attendus 2 (dégâts de zone), got %d", s.Player.Kills)
+	}
+	if s.Entities.Len() != 0 {
+		t.Fatalf("les monstres morts doivent être compactés, %d restant(s)", s.Entities.Len())
 	}
 	if s.Player.Turns != 1 {
 		t.Fatal("la boule de feu consomme un tour")
@@ -170,7 +175,7 @@ func TestCastFireballKillsAndGrantsXP(t *testing.T) {
 	rat := s.addEnemy(KindRat, 8, 7) // 8 PV, fireball niveau 1 = 10 dégâts
 	ComputeFOV(s.World, s.FOV, 7, 7, PlayerViewRange)
 	s.CastFireball(0, 0)
-	if rat.IsAlive() {
+	if s.Entities.IsAlive(rat) {
 		t.Fatal("le rat doit mourir dans la boule de feu")
 	}
 	if s.Player.Kills != 1 {
@@ -231,7 +236,7 @@ func TestDescendWithoutStairs(t *testing.T) {
 func TestVictoryOnBossKill(t *testing.T) {
 	s := newTestState(1, 10, 10)
 	boss := s.addEnemy(KindBoss, 2, 1)
-	boss.HP = 1
+	s.Entities.HP[int(boss)] = 1
 	s.Player.Attack = 100
 	s.MovePlayer(1, 0) // attaque le boss
 	if s.Phase != PhaseVictory {
@@ -248,9 +253,9 @@ func TestVictoryOnBossKill(t *testing.T) {
 func TestVictoryViaFireball(t *testing.T) {
 	s := newTestState(1, 15, 15)
 	s.Player.X, s.Player.Y = 7, 7
-	s.Player.Level = 10 // fireball = 8 + 20 = 28 dégâts > 60 PV du boss? non, boss a 60 PV
+	s.Player.Level = 10 // fireball = 8 + 20 = 28 dégâts
 	boss := s.addEnemy(KindBoss, 8, 7)
-	boss.HP = 10
+	s.Entities.HP[int(boss)] = 10
 	ComputeFOV(s.World, s.FOV, 7, 7, PlayerViewRange)
 	s.CastFireball(0, 0)
 	if s.Phase != PhaseVictory {
@@ -263,7 +268,7 @@ func TestPlayerDeath(t *testing.T) {
 	s.Player.X, s.Player.Y = 5, 5
 	s.Player.HP = 1
 	gob := s.addEnemy(KindGoblin, 6, 5)
-	gob.Attack = 50
+	s.Entities.Attack[int(gob)] = 50
 	ComputeFOV(s.World, s.FOV, 5, 5, PlayerViewRange)
 	s.PlayerWait() // le gobelin attaque et tue le joueur
 	if s.Phase != PhaseGameOver {
@@ -340,7 +345,8 @@ func TestOccupiedAndItemAt(t *testing.T) {
 	if !s.Occupied(5, 5) || s.OccupiedByEnemy(5, 5) != rat {
 		t.Fatal("la case du monstre est occupée")
 	}
-	rat.HP = 0
+	s.Entities.HP[int(rat)] = 0
+	s.Entities.Alive[int(rat)] = false // simule un monstre mort non encore compacté
 	if s.Occupied(5, 5) {
 		t.Fatal("un monstre mort n'occupe plus sa case")
 	}

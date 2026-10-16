@@ -67,12 +67,12 @@ func TestVictoryPathEndToEnd(t *testing.T) {
 		t.Fatal("pas d'escalier au dernier étage")
 	}
 	boss := s.boss()
-	if boss == nil {
+	if boss == InvalidEntity {
 		t.Fatal("le boss doit exister au dernier étage")
 	}
 	// Le joueur se téléporte sur le boss et attaque (test de transition, pas de déplacement).
 	s.Player.Attack = 1000
-	s.Player.X, s.Player.Y = boss.X, boss.Y
+	s.Player.X, s.Player.Y = s.Entities.X[int(boss)], s.Entities.Y[int(boss)]
 	s.MovePlayer(0, 0)
 	if s.Phase != PhaseVictory {
 		t.Fatalf("phase attendue PhaseVictory, got %v", s.Phase)
@@ -97,7 +97,7 @@ func TestGameOverPath(t *testing.T) {
 	for _, d := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
 		if s.World.IsWalkable(s.Player.X+d[0], s.Player.Y+d[1]) {
 			g := s.addEnemy(KindGoblin, s.Player.X+d[0], s.Player.Y+d[1])
-			g.Attack = 100
+			s.Entities.Attack[int(g)] = 100
 		}
 	}
 	ComputeFOV(s.World, s.FOV, s.Player.X, s.Player.Y, PlayerViewRange)
@@ -119,16 +119,18 @@ func TestFullFloorCycle(t *testing.T) {
 	s := NewState(7)
 	for s.World.Depth < 4 && s.Phase == PhasePlaying {
 		// Tue tous les monstres de l'étage (god mode partiel).
-		for _, e := range s.Enemies {
-			e.HP = 1
+		ids := make([]EntityID, 0, s.Entities.Len())
+		s.Entities.EachAlive(func(id EntityID) { ids = append(ids, id) })
+		for _, id := range ids {
+			s.Entities.HP[int(id)] = 1
 		}
-		for _, e := range s.Enemies {
-			if !e.IsAlive() {
+		for _, id := range ids {
+			if !s.Entities.IsAlive(id) {
 				continue
 			}
 			// Téléporte le joueur à côté et attaque.
 			s.Player.Attack = 1000
-			s.Player.X, s.Player.Y = e.X, e.Y
+			s.Player.X, s.Player.Y = s.Entities.X[int(id)], s.Entities.Y[int(id)]
 			s.MovePlayer(0, 0)
 		}
 		// Descend.

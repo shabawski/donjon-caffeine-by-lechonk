@@ -21,6 +21,8 @@ const (
 )
 
 // Player est le personnage contrôlé par le joueur.
+// Reste une struct à part entière (pas une entité ECS) : le multijoueur
+// pourra le promouvoir en entité plus tard si besoin.
 type Player struct {
 	Entity
 	Level       int
@@ -37,6 +39,8 @@ type Player struct {
 }
 
 // State est l'état complet d'une partie.
+// Les monstres vivent dans Entities (registre ECS/SOA) ; le joueur reste
+// une struct séparée ; les objets au sol restent un slice (peu nombreux).
 type State struct {
 	RNG          *RNG
 	Seed         int64
@@ -44,7 +48,7 @@ type State struct {
 	World        *World
 	FOV          *FOV
 	Player       Player
-	Enemies      []*Entity
+	Entities     *Entities // registre ECS/SOA des monstres (remplace Enemies []*Entity)
 	Items        []*Item
 	Log          []string
 	Turn         int
@@ -69,6 +73,7 @@ func NewStateSized(seed int64, width, height int) *State {
 		RNG:         NewRNG(seed),
 		Seed:        seed,
 		Phase:       PhasePlaying,
+		Entities:    NewEntities(),
 		worldWidth:  width,
 		worldHeight: height,
 	}
@@ -101,7 +106,7 @@ func (s *State) startFloor(depth int) {
 }
 
 func (s *State) spawnEnemies(depth int) {
-	s.Enemies = nil
+	s.Entities.Reset()
 	kinds := EnemyKindsForDepth(depth)
 	count := 3 + depth
 	if count > 12 {
@@ -112,9 +117,9 @@ func (s *State) spawnEnemies(depth int) {
 		if !ok || s.Occupied(x, y) {
 			continue
 		}
-		e := enemyTemplate(kinds[s.RNG.Intn(len(kinds))])
-		e.X, e.Y = x, y
-		s.Enemies = append(s.Enemies, &e)
+		t := enemyTemplate(kinds[s.RNG.Intn(len(kinds))])
+		t.X, t.Y = x, y
+		s.Entities.Spawn(t)
 	}
 }
 
@@ -126,7 +131,7 @@ func (s *State) spawnBoss() {
 	}
 	b := enemyTemplate(KindBoss)
 	b.X, b.Y = x, y
-	s.Enemies = append(s.Enemies, &b)
+	s.Entities.Spawn(b)
 	s.Logf("👑 Le Seigneur des Tasses t'attend... avec TON café !")
 }
 
@@ -142,14 +147,9 @@ func (s *State) spawnItems(depth int) {
 	}
 }
 
-// OccupiedByEnemy renvoie le monstre vivant en (x, y), ou nil.
-func (s *State) OccupiedByEnemy(x, y int) *Entity {
-	for _, e := range s.Enemies {
-		if e.IsAlive() && e.X == x && e.Y == y {
-			return e
-		}
-	}
-	return nil
+// OccupiedByEnemy renvoie l'ID du monstre vivant en (x, y), ou InvalidEntity.
+func (s *State) OccupiedByEnemy(x, y int) EntityID {
+	return s.Entities.EnemyAt(x, y)
 }
 
 // Occupied indique si une case est bloquée (joueur ou monstre vivant).
@@ -157,7 +157,7 @@ func (s *State) Occupied(x, y int) bool {
 	if s.Player.X == x && s.Player.Y == y {
 		return true
 	}
-	return s.OccupiedByEnemy(x, y) != nil
+	return s.OccupiedByEnemy(x, y) != InvalidEntity
 }
 
 // ItemAt renvoie l'objet posé en (x, y), ou nil.
@@ -187,7 +187,7 @@ func (s *State) CanEnemyMoveTo(x, y int) bool {
 	if s.Player.X == x && s.Player.Y == y {
 		return false
 	}
-	return s.OccupiedByEnemy(x, y) == nil
+	return s.OccupiedByEnemy(x, y) == InvalidEntity
 }
 
 // MovePlayer déplace le joueur de (dx, dy) ou attaque un monstre adjacent.
@@ -200,8 +200,8 @@ func (s *State) MovePlayer(dx, dy int) bool {
 	if !s.World.InBounds(nx, ny) {
 		return false
 	}
-	if e := s.OccupiedByEnemy(nx, ny); e != nil {
-		s.playerAttack(e)
+	if id := s.OccupiedByEnemy(nx, ny); id != InvalidEntity {
+		s.playerAttack(id)
 		s.endPlayerTurn()
 		return true
 	}
@@ -223,22 +223,24 @@ func (s *State) PlayerWait() {
 }
 
 // playerAttack résout l'attaque du joueur sur un monstre (arme incluse).
-func (s *State) playerAttack(e *Entity) {
-	atk := s.Player.Entity
-	atk.Attack = s.Player.EffectiveAttack()
-	dmg, crit, killed := Attack(s.RNG, &atk, e)
+func (s *State) playerAttack(id EntityID) {
+	e := s.Entities
+	i := int(id)
+	atk := s.Player.EffectiveAttack()
+	dmg, crit, killed := Attack(s.RNG, atk, e.Defense[i], &e.HP[i])
 	if crit {
-		s.Logf("💥 Coup critique sur le %s ! -%d PV", e.Name, dmg)
+		s.Logf("💥 Coup critique sur le %s ! -%d PV", e.Name[i], dmg)
 	} else {
-		s.Logf("Tu frappes le %s : -%d PV", e.Name, dmg)
+		s.Logf("Tu frappes le %s : -%d PV", e.Name[i], dmg)
 	}
 	if killed {
-		s.Logf("☠️ Le %s s'effondre ! (+%d XP)", e.Name, e.XPValue)
+		s.Logf("☠️ Le %s s'effondre ! (+%d XP)", e.Name[i], e.XPValue[i])
 		s.Player.Kills++
-		s.Player.GainXP(s, e.XPValue)
-		if e.Kind == KindBoss {
+		s.Player.GainXP(s, e.XPValue[i])
+		if e.Kind[i] == KindBoss {
 			s.victory()
 		}
+		e.Despawn(id)
 	}
 }
 
@@ -255,22 +257,21 @@ func (s *State) endPlayerTurn() {
 }
 
 func (s *State) enemiesTurn() {
-	for _, e := range s.Enemies {
-		if e.IsDead() {
+	e := s.Entities
+	// Collecte les IDs vivants avant la boucle : Compact (fin de tour)
+	// invalide les indices, et EnemyTurn peut tuer (Despawn) des monstres.
+	ids := make([]EntityID, 0, e.Len())
+	e.EachAlive(func(id EntityID) { ids = append(ids, id) })
+	for _, id := range ids {
+		if !e.IsAlive(id) {
 			continue
 		}
-		s.EnemyTurn(e)
+		s.EnemyTurn(id)
 		if s.Phase != PhasePlaying {
 			return
 		}
 	}
-	alive := s.Enemies[:0]
-	for _, e := range s.Enemies {
-		if e.IsAlive() {
-			alive = append(alive, e)
-		}
-	}
-	s.Enemies = alive
+	e.Compact()
 }
 
 func (s *State) checkDeath() {
@@ -377,20 +378,28 @@ func (s *State) CastFireball(lastDX, lastDY int) bool {
 	dmg := FireballBase + 2*s.Player.Level
 	s.Logf("🔥 Boule de feu ! (%d dégâts en zone)", dmg)
 	hit := false
-	for _, e := range s.Enemies {
-		if !e.IsAlive() || chebDist(e.X, e.Y, tx, ty) > 1 {
+	e := s.Entities
+	ids := make([]EntityID, 0, e.Len())
+	e.EachAlive(func(id EntityID) { ids = append(ids, id) })
+	for _, id := range ids {
+		i := int(id)
+		if chebDist(e.X[i], e.Y[i], tx, ty) > 1 {
 			continue
 		}
-		e.HP -= dmg
+		e.HP[i] -= dmg
+		if e.HP[i] < 0 {
+			e.HP[i] = 0
+		}
 		hit = true
-		s.Logf("La boule de feu frappe le %s : -%d PV", e.Name, dmg)
-		if e.IsDead() {
-			s.Logf("☠️ Le %s s'effondre ! (+%d XP)", e.Name, e.XPValue)
+		s.Logf("La boule de feu frappe le %s : -%d PV", e.Name[i], dmg)
+		if e.HP[i] <= 0 {
+			s.Logf("☠️ Le %s s'effondre ! (+%d XP)", e.Name[i], e.XPValue[i])
 			s.Player.Kills++
-			s.Player.GainXP(s, e.XPValue)
-			if e.Kind == KindBoss {
+			s.Player.GainXP(s, e.XPValue[i])
+			if e.Kind[i] == KindBoss {
 				s.victory()
 			}
+			e.Despawn(id)
 		}
 	}
 	if !hit {
@@ -415,19 +424,21 @@ func (s *State) nearestVisibleEnemy() (int, int, bool) {
 	bestDist := 1 << 30
 	found := false
 	bx, by := 0, 0
-	for _, e := range s.Enemies {
-		if !e.IsAlive() || !s.FOV.Visible[e.Y*s.World.Width+e.X] {
-			continue
+	e := s.Entities
+	e.EachAlive(func(id EntityID) {
+		i := int(id)
+		if !s.FOV.Visible[e.Y[i]*s.World.Width+e.X[i]] {
+			return
 		}
-		if !s.hasLineOfSight(s.Player.X, s.Player.Y, e.X, e.Y) {
-			continue
+		if !s.hasLineOfSight(s.Player.X, s.Player.Y, e.X[i], e.Y[i]) {
+			return
 		}
-		if d := chebDist(s.Player.X, s.Player.Y, e.X, e.Y); d < bestDist {
+		if d := chebDist(s.Player.X, s.Player.Y, e.X[i], e.Y[i]); d < bestDist {
 			bestDist = d
-			bx, by = e.X, e.Y
+			bx, by = e.X[i], e.Y[i]
 			found = true
 		}
-	}
+	})
 	return bx, by, found
 }
 
@@ -466,14 +477,9 @@ func (s *State) hasLineOfSight(x0, y0, x1, y1 int) bool {
 	}
 }
 
-// boss renvoie le boss vivant de l'étage, ou nil.
-func (s *State) boss() *Entity {
-	for _, e := range s.Enemies {
-		if e.Kind == KindBoss && e.IsAlive() {
-			return e
-		}
-	}
-	return nil
+// boss renvoie l'ID du boss vivant de l'étage, ou InvalidEntity.
+func (s *State) boss() EntityID {
+	return s.Entities.BossID()
 }
 
 // Score calcule le score de la partie.

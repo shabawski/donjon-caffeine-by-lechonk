@@ -1,11 +1,14 @@
 package game
 
-// Attack résout une attaque au corps à corps.
-// Base = max(1, attaque - défense), variance de ±20%, coup critique (x2) avec
-// 10% de chance. Les dégâts sont appliqués sur le défenseur.
+// Attack résout une attaque au corps à corps entre deux combattants.
+// atkAttack et defDefense sont les attaques/défenses effectives (équipement
+// inclus côté joueur). Les dégâts sont appliqués sur defenderHP (pointeur
+// vers le composant HP du défenseur — registre SOA ou Player.HP).
+// Base = max(1, attaque - défense), variance de ±20%, coup critique (x2)
+// avec 10% de chance.
 // Retourne les dégâts infligés, si c'était un critique, et si la cible meurt.
-func Attack(rng *RNG, attacker, defender *Entity) (dmg int, crit bool, killed bool) {
-	base := attacker.Attack - defender.Defense
+func Attack(rng *RNG, atkAttack, defDefense int, defenderHP *int) (dmg int, crit bool, killed bool) {
+	base := atkAttack - defDefense
 	if base < 1 {
 		base = 1
 	}
@@ -18,9 +21,10 @@ func Attack(rng *RNG, attacker, defender *Entity) (dmg int, crit bool, killed bo
 	if crit {
 		dmg *= 2
 	}
-	defender.HP -= dmg
-	if defender.HP < 0 {
-		defender.HP = 0
+	*defenderHP -= dmg
+	if *defenderHP < 0 {
+		*defenderHP = 0
 	}
-	return dmg, crit, defender.IsDead()
+	killed = *defenderHP <= 0
+	return dmg, crit, killed
 }

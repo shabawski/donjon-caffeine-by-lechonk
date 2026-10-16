@@ -189,14 +189,15 @@ func TestVictoryScreen(t *testing.T) {
 	s := game.NewState(42)
 	m := New(s)
 	m.screen = screenPlaying
-	// Simule une victoire via le moteur.
-	s.Player.HP = 0 //neutre
-	s.Player.HP = s.Player.MaxHP
-	boss := s.Enemies[0]
-	boss.Kind = game.KindBoss
-	boss.HP = 1
+	// Transforme le premier monstre en boss avec 1 PV (registre ECS/SOA).
+	if s.Entities.Len() == 0 {
+		t.Fatal("aucun monstre disponible pour le test de victoire")
+	}
+	s.Entities.Kind[0] = game.KindBoss
+	s.Entities.Name[0] = "Seigneur des Tasses"
+	s.Entities.HP[0] = 1
 	s.Player.Attack = 1000
-	s.Player.X, s.Player.Y = boss.X, boss.Y
+	s.Player.X, s.Player.Y = s.Entities.X[0], s.Entities.Y[0]
 	s.MovePlayer(0, 0)
 	m.afterPlayerAction()
 	if m.screen != screenGameOver {

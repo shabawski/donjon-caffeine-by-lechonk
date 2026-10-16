@@ -80,8 +80,8 @@ func glyphAt(s *game.State, x, y int) (rune, lipgloss.Style) {
 	if s.Player.X == x && s.Player.Y == y {
 		return s.Player.Glyph, stylePlayer
 	}
-	if e := s.OccupiedByEnemy(x, y); e != nil {
-		return e.Glyph, styleForKind(e.Kind)
+	if id := s.OccupiedByEnemy(x, y); id != game.InvalidEntity {
+		return s.Entities.Glyph[int(id)], styleForKind(s.Entities.Kind[int(id)])
 	}
 	if it := s.ItemAt(x, y); it != nil {
 		return it.Glyph, styleForItem(it.Kind)

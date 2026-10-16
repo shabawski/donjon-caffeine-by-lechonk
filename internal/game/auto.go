@@ -15,7 +15,7 @@ func (s *State) AutoAction() bool {
 	}
 	// 2. Attaquer un monstre adjacent.
 	for _, d := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
-		if e := s.OccupiedByEnemy(p.X+d[0], p.Y+d[1]); e != nil {
+		if id := s.OccupiedByEnemy(p.X+d[0], p.Y+d[1]); id != InvalidEntity {
 			s.MovePlayer(d[0], d[1])
 			return true
 		}
@@ -34,8 +34,8 @@ func (s *State) AutoAction() bool {
 	// 5. Se diriger vers l'escalier (ou chasser le boss au dernier étage).
 	targetX, targetY := s.World.StairsX, s.World.StairsY
 	if !s.World.HasStairs {
-		if b := s.boss(); b != nil {
-			targetX, targetY = b.X, b.Y
+		if b := s.boss(); b != InvalidEntity {
+			targetX, targetY = s.Entities.X[int(b)], s.Entities.Y[int(b)]
 		}
 	}
 	blocked := func(x, y int) bool { return s.Occupied(x, y) }
@@ -79,14 +79,13 @@ func (s *State) tryFlee() bool {
 // minEnemyDist renvoie la distance au monstre vivant le plus proche.
 func (s *State) minEnemyDist(x, y int) int {
 	best := 1 << 30
-	for _, e := range s.Enemies {
-		if !e.IsAlive() {
-			continue
-		}
-		if d := chebDist(x, y, e.X, e.Y); d < best {
+	e := s.Entities
+	e.EachAlive(func(id EntityID) {
+		i := int(id)
+		if d := chebDist(x, y, e.X[i], e.Y[i]); d < best {
 			best = d
 		}
-	}
+	})
 	return best
 }
 

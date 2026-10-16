@@ -3,7 +3,7 @@ package game
 // newTestState construit un State sur une carte manuelle entourée de murs,
 // pour des tests déterministes indépendants de la génération procédurale.
 func newTestState(seed int64, w, h int) *State {
-	s := &State{RNG: NewRNG(seed), Seed: seed, Phase: PhasePlaying, worldWidth: w, worldHeight: h}
+	s := &State{RNG: NewRNG(seed), Seed: seed, Phase: PhasePlaying, Entities: NewEntities(), worldWidth: w, worldHeight: h}
 	s.World = &World{Width: w, Height: h, Depth: 1, Tiles: make([]Tile, w*h)}
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -20,12 +20,11 @@ func newTestState(seed int64, w, h int) *State {
 	return s
 }
 
-// addEnemy place un monstre du type donné en (x, y) et retourne son pointeur.
-func (s *State) addEnemy(kind EntityKind, x, y int) *Entity {
-	e := enemyTemplate(kind)
-	e.X, e.Y = x, y
-	s.Enemies = append(s.Enemies, &e)
-	return s.Enemies[len(s.Enemies)-1]
+// addEnemy place un monstre du type donné en (x, y) et retourne son EntityID.
+func (s *State) addEnemy(kind EntityKind, x, y int) EntityID {
+	t := enemyTemplate(kind)
+	t.X, t.Y = x, y
+	return s.Entities.Spawn(t)
 }
 
 // floodFillCount compte les cases franchissables atteignables depuis (startX, startY).

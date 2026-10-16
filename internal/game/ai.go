@@ -63,71 +63,76 @@ func BFSNextStep(w *World, blocked func(x, y int) bool, fromX, fromY, toX, toY i
 // EnemyTurn fait agir un monstre pour ce tour : patrouille si le joueur n'est
 // pas détecté, fuite si le monstre est faible et blessé, chasse (BFS) sinon,
 // attaque au corps à corps si adjacent.
-func (s *State) EnemyTurn(e *Entity) {
-	if e.IsDead() {
+// Le monstre est identifié par son EntityID dans le registre SOA s.Entities.
+func (s *State) EnemyTurn(id EntityID) {
+	e := s.Entities
+	if !e.IsAlive(id) {
 		return
 	}
+	i := int(id)
 	px, py := s.Player.X, s.Player.Y
-	dist := chebDist(e.X, e.Y, px, py)
+	dist := chebDist(e.X[i], e.Y[i], px, py)
 	playerVisible := s.FOV.Visible[py*s.World.Width+px]
-	detected := playerVisible && dist <= e.DetectRange
-	if e.Kind == KindBoss && dist <= e.DetectRange {
+	detected := playerVisible && dist <= e.DetectRange[i]
+	if e.Kind[i] == KindBoss && dist <= e.DetectRange[i] {
 		detected = true // le boss flaire le café du joueur de loin
 	}
 	if !detected {
 		// Patrouille : un déplacement sur deux vers une case voisine au hasard.
 		if s.RNG.Chance(0.5) {
-			s.moveEnemyRandom(e)
+			s.moveEnemyRandom(id)
 		}
 		return
 	}
-	if e.FleeBelow > 0 && float64(e.HP)/float64(e.MaxHP) < e.FleeBelow {
-		s.moveEnemyAway(e, px, py)
+	if e.FleeBelow[i] > 0 && float64(e.HP[i])/float64(e.MaxHP[i]) < e.FleeBelow[i] {
+		s.moveEnemyAway(id, px, py)
 		return
 	}
 	if dist == 1 {
-		atk := *e
-		if e.Kind == KindBoss && float64(e.HP)/float64(e.MaxHP) < 0.5 {
-			atk.Attack += 2 // le boss se met en colère quand il est blessé
+		atk := e.Attack[i]
+		if e.Kind[i] == KindBoss && float64(e.HP[i])/float64(e.MaxHP[i]) < 0.5 {
+			atk += 2 // le boss se met en colère quand il est blessé
 		}
-		def := s.Player.Entity
-		def.Defense = s.Player.EffectiveDefense()
-		dmg, crit, killed := Attack(s.RNG, &atk, &def)
-		s.Player.HP = def.HP
+		def := s.Player.EffectiveDefense()
+		dmg, crit, killed := Attack(s.RNG, atk, def, &s.Player.HP)
 		if crit {
-			s.Logf("💥 Le %s te porte un coup critique ! -%d PV (%d/%d)", e.Name, dmg, s.Player.HP, s.Player.MaxHP)
+			s.Logf("💥 Le %s te porte un coup critique ! -%d PV (%d/%d)", e.Name[i], dmg, s.Player.HP, s.Player.MaxHP)
 		} else {
-			s.Logf("Le %s t'attaque : -%d PV (%d/%d)", e.Name, dmg, s.Player.HP, s.Player.MaxHP)
+			s.Logf("Le %s t'attaque : -%d PV (%d/%d)", e.Name[i], dmg, s.Player.HP, s.Player.MaxHP)
 		}
 		if killed {
-			s.CauseOfDeath = "tué par un(e) " + e.Name
+			s.CauseOfDeath = "tué par un(e) " + e.Name[i]
 			s.PlayerDeath()
 		}
 		return
 	}
-	blocked := func(x, y int) bool { return s.OccupiedByEnemy(x, y) != nil }
-	nx, ny, ok := BFSNextStep(s.World, blocked, e.X, e.Y, px, py)
+	blocked := func(x, y int) bool { return s.OccupiedByEnemy(x, y) != InvalidEntity }
+	nx, ny, ok := BFSNextStep(s.World, blocked, e.X[i], e.Y[i], px, py)
 	if !ok {
-		s.moveEnemyRandom(e)
+		s.moveEnemyRandom(id)
 		return
 	}
-	s.moveEnemyTo(e, nx, ny)
+	s.moveEnemyTo(id, nx, ny)
 }
 
 // moveEnemyRandom déplace le monstre vers une case voisine franchissable au hasard.
-func (s *State) moveEnemyRandom(e *Entity) {
+func (s *State) moveEnemyRandom(id EntityID) {
+	e := s.Entities
+	i := int(id)
 	dirs := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
-	s.RNG.Shuffle(4, func(i, j int) { dirs[i], dirs[j] = dirs[j], dirs[i] })
+	s.RNG.Shuffle(4, func(a, b int) { dirs[a], dirs[b] = dirs[b], dirs[a] })
 	for _, d := range dirs {
-		if s.CanEnemyMoveTo(e.X+d[0], e.Y+d[1]) {
-			s.moveEnemyTo(e, e.X+d[0], e.Y+d[1])
+		if s.CanEnemyMoveTo(e.X[i]+d[0], e.Y[i]+d[1]) {
+			s.moveEnemyTo(id, e.X[i]+d[0], e.Y[i]+d[1])
 			return
 		}
 	}
 }
 
 // moveEnemyAway déplace le monstre vers la case voisine qui l'éloigne le plus du joueur.
-func (s *State) moveEnemyAway(e *Entity, px, py int) {
+func (s *State) moveEnemyAway(id EntityID, px, py int) {
+	e := s.Entities
+	i := int(id)
 	type cand struct{ x, y, score int }
 	best := cand{score: -1}
 	for dy := -1; dy <= 1; dy++ {
@@ -135,7 +140,7 @@ func (s *State) moveEnemyAway(e *Entity, px, py int) {
 			if dx == 0 && dy == 0 {
 				continue
 			}
-			nx, ny := e.X+dx, e.Y+dy
+			nx, ny := e.X[i]+dx, e.Y[i]+dy
 			if !s.CanEnemyMoveTo(nx, ny) {
 				continue
 			}
@@ -145,12 +150,14 @@ func (s *State) moveEnemyAway(e *Entity, px, py int) {
 		}
 	}
 	if best.score >= 0 {
-		s.moveEnemyTo(e, best.x, best.y)
+		s.moveEnemyTo(id, best.x, best.y)
 	}
 }
 
-func (s *State) moveEnemyTo(e *Entity, x, y int) {
-	e.X, e.Y = x, y
+func (s *State) moveEnemyTo(id EntityID, x, y int) {
+	i := int(id)
+	s.Entities.X[i] = x
+	s.Entities.Y[i] = y
 }
 
 // chebDist est la distance de Chebyshev (max des distances sur chaque axe).

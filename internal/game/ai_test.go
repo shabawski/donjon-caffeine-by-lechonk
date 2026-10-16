@@ -72,9 +72,9 @@ func TestEnemyTurnChasesVisiblePlayer(t *testing.T) {
 	s.Player.X, s.Player.Y = 10, 10
 	gob := s.addEnemy(KindGoblin, 10, 14) // distance 4, dans la portée de détection
 	ComputeFOV(s.World, s.FOV, 10, 10, PlayerViewRange)
-	before := chebDist(gob.X, gob.Y, 10, 10)
+	before := chebDist(s.Entities.X[int(gob)], s.Entities.Y[int(gob)], 10, 10)
 	s.EnemyTurn(gob)
-	after := chebDist(gob.X, gob.Y, 10, 10)
+	after := chebDist(s.Entities.X[int(gob)], s.Entities.Y[int(gob)], 10, 10)
 	if after >= before {
 		t.Fatalf("le monstre doit se rapprocher du joueur visible: %d -> %d", before, after)
 	}
@@ -84,11 +84,11 @@ func TestEnemyTurnFleesWhenWeak(t *testing.T) {
 	s := newTestState(1, 20, 20)
 	s.Player.X, s.Player.Y = 10, 10
 	rat := s.addEnemy(KindRat, 10, 13) // distance 3
-	rat.HP = 1                         // 1/8 < FleeBelow (0.4) => fuite
+	s.Entities.HP[int(rat)] = 1        // 1/8 < FleeBelow (0.4) => fuite
 	ComputeFOV(s.World, s.FOV, 10, 10, PlayerViewRange)
-	before := chebDist(rat.X, rat.Y, 10, 10)
+	before := chebDist(s.Entities.X[int(rat)], s.Entities.Y[int(rat)], 10, 10)
 	s.EnemyTurn(rat)
-	after := chebDist(rat.X, rat.Y, 10, 10)
+	after := chebDist(s.Entities.X[int(rat)], s.Entities.Y[int(rat)], 10, 10)
 	if after <= before {
 		t.Fatalf("le rat blessé doit fuir le joueur: %d -> %d", before, after)
 	}
@@ -111,7 +111,7 @@ func TestEnemyTurnDeadEnemyDoesNothing(t *testing.T) {
 	s := newTestState(1, 15, 15)
 	s.Player.X, s.Player.Y = 5, 5
 	rat := s.addEnemy(KindRat, 6, 5)
-	rat.HP = 0
+	s.Entities.Despawn(rat)
 	ComputeFOV(s.World, s.FOV, 5, 5, PlayerViewRange)
 	s.EnemyTurn(rat)
 	if s.Player.HP != s.Player.MaxHP {
@@ -127,11 +127,11 @@ func TestBossAlwaysDetectsPlayer(t *testing.T) {
 	if s.FOV.Visible[3*40+13] {
 		t.Fatal("le boss à distance 10 est hors du FOV (portée 8)")
 	}
-	before := chebDist(boss.X, boss.Y, 3, 3)
+	before := chebDist(s.Entities.X[int(boss)], s.Entities.Y[int(boss)], 3, 3)
 	for i := 0; i < 3; i++ {
 		s.EnemyTurn(boss)
 	}
-	after := chebDist(boss.X, boss.Y, 3, 3)
+	after := chebDist(s.Entities.X[int(boss)], s.Entities.Y[int(boss)], 3, 3)
 	if after >= before {
 		t.Fatalf("le boss doit chasser même hors champ de vision: %d -> %d", before, after)
 	}

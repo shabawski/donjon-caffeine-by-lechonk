@@ -91,7 +91,7 @@ go test ./...
 
 - `internal/game` : tests unitaires (RNG déterministe, génération procédurale et
   connexité, FOV/fog of war, combat, IA, progression, transitions victoire/défaite,
-  dimensions d'étage `NewStateSized`/`ClampWorldSize`)
+  dimensions d'étage `NewStateSized`/`ClampWorldSize`, registre ECS/SOA `Entities`)
   + tests d'intégration (parties complètes en bot sur 20 graines, victoire et
   défaite de bout en bout).
 - `internal/score` : persistance (ajout, tri, top 10, fichier absent/corrompu).
@@ -107,9 +107,10 @@ internal/game/        moteur de jeu pur — AUCUNE dépendance TUI, testé unita
   rng.go              RNG déterministe (seedable)
   world.go            génération procédurale d'étage (salles + couloirs + escalier)
   fov.go              champ de vision (rayons de Bresenham) + fog of war
-  entity.go           joueur, monstres, boss (stats, glyphes)
+  ecs.go              registre ECS/SOA des monstres (tableaux parallèles par composant)
+  entity.go           joueur, monstres, boss (stats, glyphes, templates)
   combat.go           résolution d'attaque (défense, variance, critiques)
-  ai.go               IA ennemie + pathfinding BFS
+  ai.go               IA ennemie + pathfinding BFS (par EntityID)
   items.go            objets (or, potions, armes, armures)
   progression.go      XP, niveaux, attaque/défense effectives
   state.go            état de partie, tours, sorts, victoire/défaite, score, journal
@@ -123,6 +124,24 @@ internal/tui/         interface terminal (BubbleTea + Lipgloss), plein écran
   gameover.go         écrans victoire / game over
 internal/score/       persistance des high scores (JSON, top 10, écriture atomique)
 ```
+
+### Architecture du moteur : ECS + SOA
+
+Les monstres sont stockés dans un **registre ECS** (`internal/game/ecs.go`) avec
+une organisation **SOA** (Structure of Arrays) : chaque composant (position,
+PV, attaque, etc.) est un tableau parallèle indexé par `EntityID`, plutôt qu'un
+tableau de structs. Avantages :
+
+- **Localité cache** : les itérations de l'IA parcourent des tranches contiguës
+  (`xs`, `ys`, `hps`…), sans indirection pointeur.
+- **Pas d'allocation par entité** : un spawn est un `append` sur chaque tableau.
+- **Compaction** : les monstres morts sont supprimés physiquement en fin de tour
+  (`Compact`), libérant la RAM et gardant les tableaux denses.
+- **Sérialisation naturelle** : les tableaux parallèles se prêtent au protocole
+  réseau (client/serveur) prévu en v2.
+
+Le joueur reste une struct à part entière (`Player` embarque un `Entity`) ;
+les objets au sol restent un slice (peu nombreux, pas de hot path).
 
 ## Dépendances
 
