@@ -1,6 +1,8 @@
 package client
 
 import (
+	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 
@@ -168,4 +170,84 @@ func TestServerClientDisconnect(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout: c2 n'a pas reçu de snapshot après déconnexion de c1")
 	}
+}
+
+// TestTCPClientConcurrentNextSnapshot — RÉGRESSION (17/10) : plusieurs
+// NextSnapshot simultanés ne doivent pas paniquer. Avant le fix, chaque
+// appel lisait sur le même bufio.Reader (non thread-safe) → panic
+// "slice bounds out of range". Le fix : readLoop (goroutine unique) + channel.
+func TestTCPClientConcurrentNextSnapshot(t *testing.T) {
+	srv := server.NewServer(42, game.DefaultWidth, game.DefaultHeight)
+	if err := srv.Listen("127.0.0.1:0"); err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer srv.Close()
+	go srv.Serve()
+
+	c, _ := NewTCPClient(srv.Addr())
+	if err := c.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer c.Close()
+
+	// Consomme le snapshot initial.
+	if _, err := c.NextSnapshot(); err != nil {
+		t.Fatalf("snapshot initial: %v", err)
+	}
+
+	// Envoie 10 inputs rapidement (le serveur broadcast 10 snapshots).
+	const n = 10
+	for i := 0; i < n; i++ {
+		_ = c.SendInput(netproto.InputPayload{Kind: netproto.InputWait})
+	}
+	// Appelle NextSnapshot en parallèle depuis 10 goroutines : aucun panic.
+	// Note : snap == nil est valide (fin de partie si le joueur meurt pendant
+	// les 10 tours "wait" — le serveur envoie alors MsgEnd et ferme le channel).
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := c.NextSnapshot()
+			if err != nil {
+				t.Errorf("NextSnapshot: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// TestTCPClientLargeSnapshot — RÉGRESSION (17/10) : un snapshot JSON
+// dépassant le buffer bufio par défaut (4096 octets) doit être lu sans
+// erreur. Le buffer de lecture est porté à 1 Mo.
+func TestTCPClientLargeSnapshot(t *testing.T) {
+	srv := server.NewServer(42, 200, 100) // grande carte = gros snapshot JSON
+	if err := srv.Listen("127.0.0.1:0"); err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer srv.Close()
+	go srv.Serve()
+
+	c, _ := NewTCPClient(srv.Addr())
+	if err := c.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer c.Close()
+
+	snap, err := c.NextSnapshot()
+	if err != nil {
+		t.Fatalf("snapshot initial: %v", err)
+	}
+	if snap == nil {
+		t.Fatal("snapshot nil")
+	}
+	if snap.Width != 200 || snap.Height != 100 {
+		t.Fatalf("dimensions attendues 200x100, got %dx%d", snap.Width, snap.Height)
+	}
+	// Vérifie que le JSON dépasse bien 4096 octets (sinon le test ne prouve rien).
+	data, _ := json.Marshal(snap)
+	if len(data) <= 4096 {
+		t.Fatalf("snapshot trop petit pour le test de dépassement de buffer: %d octets", len(data))
+	}
+	t.Logf("snapshot JSON: %d octets (dépasse le buffer bufio par défaut de 4096)", len(data))
 }

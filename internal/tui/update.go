@@ -41,6 +41,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case snapshotMsg:
 		m.snapshot = msg.snap
 		m.afterSnapshot()
+		// Relancer l'attente du prochain snapshot : en multi, le serveur
+		// broadcast à tous les clients après chaque input, donc on reçoit
+		// des snapshots même sans input (pour voir les autres joueurs).
+		// En solo, aucun snapshot n'arrive sans input : la commande bloque
+		// jusqu'au prochain input (qui draine puis envoie).
+		if m.screen == screenPlaying {
+			return m, m.waitSnapshot()
+		}
 		return m, nil
 	case newGameMsg:
 		m.client = msg.client
@@ -62,7 +70,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // sendInput envoie une action au serveur et retourne une commande qui attend
 // le prochain snapshot. Le rendu se met à jour à la réception (snapshotMsg).
+// Avant l'envoi, on draine les snapshots en attente (broadcasts des autres
+// joueurs en multi) pour que le prochain NextSnapshot corresponde à NOTRE input.
 func (m *Model) sendInput(in net.InputPayload) (tea.Model, tea.Cmd) {
+	m.client.DrainSnapshots()
 	_ = m.client.SendInput(in)
 	return m, m.waitSnapshot()
 }

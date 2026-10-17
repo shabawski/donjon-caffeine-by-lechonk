@@ -20,6 +20,9 @@ type GameClient interface {
 	// NextSnapshot bloque jusqu'au prochain snapshot du serveur.
 	// Retourne (nil, nil) si la partie est terminée.
 	NextSnapshot() (*game.Snapshot, error)
+	// DrainSnapshots vide les snapshots en attente sans bloquer.
+	// En multi, écarte les broadcasts des autres joueurs avant un input.
+	DrainSnapshots()
 	// Close libère les ressources.
 	Close() error
 }
@@ -118,6 +121,18 @@ func (c *LocalClient) Close() error {
 		close(c.done)
 	}
 	return nil
+}
+
+// DrainSnapshots vide les snapshots en attente sans bloquer (no-op utile en
+// solo — un seul joueur, pas de broadcast — mais requis par l'interface).
+func (c *LocalClient) DrainSnapshots() {
+	for {
+		select {
+		case <-c.outCh:
+		default:
+			return
+		}
+	}
 }
 
 // State expose l'état interne du serveur embarqué (pour les tests uniquement).

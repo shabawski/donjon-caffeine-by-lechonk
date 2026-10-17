@@ -42,6 +42,7 @@ type mockClient struct {
 func (c *mockClient) Connect() error                        { return nil }
 func (c *mockClient) SendInput(netproto.InputPayload) error { return nil }
 func (c *mockClient) NextSnapshot() (*game.Snapshot, error) { return c.snap, nil }
+func (c *mockClient) DrainSnapshots()                       {}
 func (c *mockClient) Close() error                          { return nil }
 
 func TestViewMenuContainsTitle(t *testing.T) {
