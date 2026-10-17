@@ -16,6 +16,7 @@ const (
 	screenInventory
 	screenScores
 	screenGameOver
+	screenShop
 )
 
 // hudWidth est la largeur fixe du panneau HUD affiché à droite de la carte.
@@ -39,6 +40,9 @@ type Model struct {
 	lastDY     int
 	menuCursor int
 	scoreSaved bool
+	invCursor  int // curseur dans l'inventaire
+	shopCursor int // curseur dans l'écran marchand
+	shopTab    int // onglet marchand : 0 = achat, 1 = vente
 }
 
 // New crée le modèle sur une partie donnée (démarrage sur le menu).

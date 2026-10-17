@@ -36,6 +36,7 @@ type Player struct {
 	Mana        int
 	Turns       int
 	Kills       int
+	Inventory   []*Item // objets gardés sur soi (armes, armures, potions)
 }
 
 // State est l'état complet d'une partie.
@@ -100,6 +101,7 @@ func (s *State) startFloor(depth int) {
 	s.Player.X, s.Player.Y = px, py
 	s.spawnEnemies(floorRNG, depth)
 	s.spawnItems(floorRNG, depth)
+	s.spawnMerchant(floorRNG, depth)
 	if depth == MaxDepth {
 		s.spawnBoss(floorRNG)
 	}
@@ -150,6 +152,27 @@ func (s *State) spawnItems(rng *RNG, depth int) {
 			continue
 		}
 		s.Items = append(s.Items, RollItem(rng, x, y, depth))
+	}
+}
+
+// spawnMerchant invoque un PNJ marchand sur les étages pairs (hors dernier étage).
+func (s *State) spawnMerchant(rng *RNG, depth int) {
+	s.World.Merchant = nil
+	if depth%2 != 0 || depth >= MaxDepth {
+		return
+	}
+	for tries := 0; tries < 50; tries++ {
+		x, y, ok := s.World.RandomFloor(rng)
+		if !ok || s.Occupied(x, y) {
+			continue
+		}
+		// Pas sur les escaliers.
+		if (x == s.World.StairsX && y == s.World.StairsY) || (x == s.World.StairsUpX && y == s.World.StairsUpY) {
+			continue
+		}
+		s.World.Merchant = NewMerchant(rng, x, y, depth)
+		s.Logf("💰 Un marchand campe par ici (touche m près de lui pour commercer).")
+		return
 	}
 }
 
@@ -361,7 +384,8 @@ func (s *State) Ascend() bool {
 	return true
 }
 
-// pickupItems applique l'objet sous le joueur (ramassage automatique).
+// pickupItems applique l'objet sous le joueur. L'or est ramassé directement ;
+// les armes, armures et potions vont dans l'inventaire (pas d'auto-équip).
 func (s *State) pickupItems() {
 	it := s.ItemAt(s.Player.X, s.Player.Y)
 	if it == nil {
@@ -371,6 +395,55 @@ func (s *State) pickupItems() {
 	case ItemGold:
 		s.Player.Gold += it.Power
 		s.Logf("Tu ramasses %d pièces d'or.", it.Power)
+	case ItemWeapon, ItemArmor, ItemPotionHP, ItemPotionMana:
+		s.Player.Inventory = append(s.Player.Inventory, it)
+		s.Logf("🎒 %s ajouté à l'inventaire (i pour l'utiliser).", it.Name)
+	}
+	s.removeItem(it)
+}
+
+// EquipItem équipe l'objet à l'index donné (arme ou armure). L'ancien
+// équipement retourne dans l'inventaire. Retourne false si l'index est invalide
+// ou si l'objet n'est pas équipable.
+func (s *State) EquipItem(index int) bool {
+	if index < 0 || index >= len(s.Player.Inventory) {
+		return false
+	}
+	it := s.Player.Inventory[index]
+	switch it.Kind {
+	case ItemWeapon:
+		// L'arme actuelle retourne dans l'inventaire si elle existe.
+		if s.Player.WeaponName != "" {
+			old := &Item{Kind: ItemWeapon, Name: s.Player.WeaponName, Glyph: '/', Power: s.Player.WeaponBonus}
+			s.Player.Inventory = append(s.Player.Inventory, old)
+		}
+		s.Player.WeaponName = it.Name
+		s.Player.WeaponBonus = it.Power
+		s.Logf("⚔️ Tu équipes : %s (+%d attaque)", it.Name, it.Power)
+	case ItemArmor:
+		if s.Player.ArmorName != "" {
+			old := &Item{Kind: ItemArmor, Name: s.Player.ArmorName, Glyph: '[', Power: s.Player.ArmorBonus}
+			s.Player.Inventory = append(s.Player.Inventory, old)
+		}
+		s.Player.ArmorName = it.Name
+		s.Player.ArmorBonus = it.Power
+		s.Logf("🛡️ Tu équipes : %s (+%d défense)", it.Name, it.Power)
+	default:
+		return false
+	}
+	// Retire l'objet équipé de l'inventaire (swap-remove pour garder l'ordre simple).
+	s.Player.Inventory = append(s.Player.Inventory[:index], s.Player.Inventory[index+1:]...)
+	return true
+}
+
+// UseItem utilise l'objet à l'index donné (potion de soin ou de mana).
+// Retourne false si l'index est invalide ou si l'objet n'est pas utilisable.
+func (s *State) UseItem(index int) bool {
+	if index < 0 || index >= len(s.Player.Inventory) {
+		return false
+	}
+	it := s.Player.Inventory[index]
+	switch it.Kind {
 	case ItemPotionHP:
 		s.Player.HP += it.Power
 		if s.Player.HP > s.Player.MaxHP {
@@ -383,24 +456,32 @@ func (s *State) pickupItems() {
 			s.Player.Mana = s.Player.MaxMana
 		}
 		s.Logf("🧪 Potion de mana : +%d mana (%d/%d)", it.Power, s.Player.Mana, s.Player.MaxMana)
-	case ItemWeapon:
-		if it.Power > s.Player.WeaponBonus {
-			s.Logf("⚔️ Tu équipes : %s (+%d attaque)", it.Name, it.Power)
-			s.Player.WeaponName = it.Name
-			s.Player.WeaponBonus = it.Power
-		} else {
-			s.Logf("Tu laisses %s (ton arme est meilleure).", it.Name)
-		}
-	case ItemArmor:
-		if it.Power > s.Player.ArmorBonus {
-			s.Logf("🛡️ Tu équipes : %s (+%d défense)", it.Name, it.Power)
-			s.Player.ArmorName = it.Name
-			s.Player.ArmorBonus = it.Power
-		} else {
-			s.Logf("Tu laisses %s (ton armure est meilleure).", it.Name)
-		}
+	default:
+		return false
 	}
-	s.removeItem(it)
+	s.Player.Inventory = append(s.Player.Inventory[:index], s.Player.Inventory[index+1:]...)
+	return true
+}
+
+// DropItem jette l'objet à l'index donné (le pose au sol sous le joueur).
+func (s *State) DropItem(index int) {
+	if index < 0 || index >= len(s.Player.Inventory) {
+		return
+	}
+	it := s.Player.Inventory[index]
+	it.X, it.Y = s.Player.X, s.Player.Y
+	s.Items = append(s.Items, it)
+	s.Player.Inventory = append(s.Player.Inventory[:index], s.Player.Inventory[index+1:]...)
+	s.Logf("Tu jettes %s.", it.Name)
+}
+
+// InventoryValue renvoie la valeur totale de l'inventaire (pour la vente).
+func (s *State) InventoryValue() int {
+	total := 0
+	for _, it := range s.Player.Inventory {
+		total += ItemValue(it)
+	}
+	return total
 }
 
 // CastFireball lance une boule de feu : dégâts fixes (base + 2/niveau) sur tous

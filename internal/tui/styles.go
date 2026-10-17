@@ -15,6 +15,7 @@ var (
 	styleFloor    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	styleStairs   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
 	styleStairsUp = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
+	styleMerchant = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("220"))
 	styleDim      = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 	styleHP       = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	styleMana     = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))

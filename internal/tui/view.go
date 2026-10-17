@@ -24,6 +24,8 @@ func (m *Model) View() string {
 		return m.viewScores()
 	case screenGameOver:
 		return m.viewGameOver()
+	case screenShop:
+		return m.viewShop()
 	}
 	return ""
 }
@@ -75,10 +77,13 @@ func (m *Model) renderViewport() string {
 }
 
 // glyphAt choisit le glyph et le style d'une case visible :
-// joueur > monstre > objet > tuile.
+// joueur > marchand > monstre > objet > tuile.
 func glyphAt(s *game.State, x, y int) (rune, lipgloss.Style) {
 	if s.Player.X == x && s.Player.Y == y {
 		return s.Player.Glyph, stylePlayer
+	}
+	if m := s.World.Merchant; m != nil && m.X == x && m.Y == y {
+		return m.Glyph, styleMerchant
 	}
 	if id := s.OccupiedByEnemy(x, y); id != game.InvalidEntity {
 		return s.Entities.Glyph[int(id)], styleForKind(s.Entities.Kind[int(id)])

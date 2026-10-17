@@ -59,7 +59,8 @@ type World struct {
 	HasStairs     bool // escalier vers le bas (false au dernier étage)
 	StairsUpX     int
 	StairsUpY     int
-	HasStairsUp   bool // escalier vers le haut (false au premier étage)
+	HasStairsUp   bool      // escalier vers le haut (false au premier étage)
+	Merchant      *Merchant // PNJ marchand (nil si pas de marchand sur cet étage)
 }
 
 // InBounds indique si (x, y) est dans la carte.

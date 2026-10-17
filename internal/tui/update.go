@@ -29,12 +29,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateMenu(msg)
 	case screenPlaying:
 		return m.updatePlaying(msg)
-	case screenHelp, screenInventory:
+	case screenHelp:
 		switch msg.String() {
-		case "esc", "?", "i", "enter":
+		case "esc", "?", "enter":
 			m.screen = screenPlaying
 		}
 		return m, nil
+	case screenInventory:
+		return m.updateInventory(msg)
+	case screenShop:
+		return m.updateShop(msg)
 	case screenScores:
 		switch msg.String() {
 		case "esc", "q", "enter":
@@ -95,6 +99,13 @@ func (m *Model) updatePlaying(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.afterPlayerAction()
 	case "i":
 		m.screen = screenInventory
+		m.invCursor = 0
+	case "m":
+		if m.state.MerchantAdjacent() {
+			m.screen = screenShop
+			m.shopCursor = 0
+			m.shopTab = 0
+		}
 	case "?":
 		m.screen = screenHelp
 	case "Q", "esc":
@@ -147,4 +158,80 @@ func entryFromState(s *game.State) score.Entry {
 		Won:   s.Won,
 		Death: s.CauseOfDeath,
 	}
+}
+
+// updateInventory gère les touches dans l'écran inventaire :
+// navigation, équiper (e), utiliser (u), jeter (d).
+func (m *Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	inv := m.state.Player.Inventory
+	switch msg.String() {
+	case "esc", "i", "enter":
+		m.screen = screenPlaying
+	case "up", "k", "z":
+		if m.invCursor > 0 {
+			m.invCursor--
+		}
+	case "down", "j", "s":
+		if m.invCursor < len(inv)-1 {
+			m.invCursor++
+		}
+	case "e":
+		m.state.EquipItem(m.invCursor)
+		m.clampInvCursor()
+	case "u":
+		m.state.UseItem(m.invCursor)
+		m.clampInvCursor()
+	case "d":
+		m.state.DropItem(m.invCursor)
+		m.clampInvCursor()
+	}
+	return m, nil
+}
+
+// clampInvCursor borne le curseur d'inventaire après une suppression.
+func (m *Model) clampInvCursor() {
+	if n := len(m.state.Player.Inventory); m.invCursor >= n && m.invCursor > 0 {
+		m.invCursor = n - 1
+	}
+}
+
+// updateShop gère les touches dans l'écran marchand :
+// tab change d'onglet (achat/vente), entrée achète ou vend.
+func (m *Model) updateShop(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "m":
+		m.screen = screenPlaying
+	case "tab", "h", "l":
+		m.shopTab = 1 - m.shopTab // bascule achat (0) / vente (1)
+		m.shopCursor = 0
+	case "up", "k", "z":
+		if m.shopCursor > 0 {
+			m.shopCursor--
+		}
+	case "down", "j", "s":
+		if max := m.shopListLen(); m.shopCursor < max-1 {
+			m.shopCursor++
+		}
+	case "enter":
+		if m.shopTab == 0 {
+			m.state.BuyItem(m.shopCursor)
+		} else {
+			m.state.SellItem(m.shopCursor)
+		}
+		if n := m.shopListLen(); m.shopCursor >= n && m.shopCursor > 0 {
+			m.shopCursor = n - 1
+		}
+	}
+	return m, nil
+}
+
+// shopListLen renvoie le nombre d'entrées dans l'onglet actif du marchand.
+func (m *Model) shopListLen() int {
+	if m.shopTab == 0 {
+		if m.state.World.Merchant == nil {
+			return 0
+		}
+		return len(m.state.World.Merchant.Shop)
+	}
+	return len(m.state.Player.Inventory)
 }

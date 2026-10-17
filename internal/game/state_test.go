@@ -93,46 +93,45 @@ func TestMovePlayerBlockedWhenNotPlaying(t *testing.T) {
 	}
 }
 
-func TestPickupPotionHeals(t *testing.T) {
+func TestPickupPotionGoesToInventory(t *testing.T) {
 	s := newTestState(1, 10, 10)
 	s.Player.HP = 10
 	s.Items = []*Item{{Kind: ItemPotionHP, Name: "potion de soin", Glyph: '!', X: 2, Y: 1, Power: 10}}
 	s.MovePlayer(1, 0)
-	if s.Player.HP != 20 {
-		t.Fatalf("PV attendu 20 après potion, got %d", s.Player.HP)
+	// La potion va dans l'inventaire, les PV ne sont pas modifiés.
+	if s.Player.HP != 10 {
+		t.Fatalf("PV ne doit pas changer au ramassage, got %d", s.Player.HP)
+	}
+	if len(s.Player.Inventory) != 1 || s.Player.Inventory[0].Kind != ItemPotionHP {
+		t.Fatalf("potion attendue dans l'inventaire, got %v", s.Player.Inventory)
 	}
 	if len(s.Items) != 0 {
 		t.Fatal("la potion doit être retirée de la carte")
 	}
 }
 
-func TestPickupPotionClampsToMaxHP(t *testing.T) {
-	s := newTestState(1, 10, 10)
-	s.Player.HP = 35 // MaxHP = 40 : 35 + 10 = 45 → clamp à 40
-	s.Items = []*Item{{Kind: ItemPotionHP, Name: "potion de soin", Glyph: '!', X: 2, Y: 1, Power: 10}}
-	s.MovePlayer(1, 0)
-	if s.Player.HP != s.Player.MaxHP {
-		t.Fatalf("PV doit être plafonné à %d, got %d", s.Player.MaxHP, s.Player.HP)
-	}
-}
-
-func TestPickupBetterWeaponEquips(t *testing.T) {
+func TestPickupWeaponGoesToInventory(t *testing.T) {
 	s := newTestState(1, 10, 10)
 	s.Items = []*Item{{Kind: ItemWeapon, Name: "épée courte", Glyph: '/', X: 2, Y: 1, Power: 3}}
 	s.MovePlayer(1, 0)
-	if s.Player.WeaponBonus != 3 || s.Player.WeaponName != "épée courte" {
-		t.Fatalf("arme attendue équipée, got %q (+%d)", s.Player.WeaponName, s.Player.WeaponBonus)
+	// L'arme va dans l'inventaire, pas d'auto-équip.
+	if s.Player.WeaponBonus != 0 || s.Player.WeaponName != "" {
+		t.Fatalf("pas d'auto-équip attendu, got %q (+%d)", s.Player.WeaponName, s.Player.WeaponBonus)
+	}
+	if len(s.Player.Inventory) != 1 || s.Player.Inventory[0].Kind != ItemWeapon {
+		t.Fatalf("arme attendue dans l'inventaire, got %v", s.Player.Inventory)
 	}
 }
 
-func TestPickupWorseWeaponIgnored(t *testing.T) {
+func TestPickupArmorGoesToInventory(t *testing.T) {
 	s := newTestState(1, 10, 10)
-	s.Player.WeaponBonus = 5
-	s.Player.WeaponName = "marteau de forge"
-	s.Items = []*Item{{Kind: ItemWeapon, Name: "dague rouillée", Glyph: '/', X: 2, Y: 1, Power: 1}}
+	s.Items = []*Item{{Kind: ItemArmor, Name: "cotte de mailles", Glyph: '[', X: 2, Y: 1, Power: 2}}
 	s.MovePlayer(1, 0)
-	if s.Player.WeaponBonus != 5 || s.Player.WeaponName != "marteau de forge" {
-		t.Fatal("une arme plus faible ne doit pas être équipée")
+	if s.Player.ArmorBonus != 0 || s.Player.ArmorName != "" {
+		t.Fatalf("pas d'auto-équip attendu, got %q (+%d)", s.Player.ArmorName, s.Player.ArmorBonus)
+	}
+	if len(s.Player.Inventory) != 1 || s.Player.Inventory[0].Kind != ItemArmor {
+		t.Fatalf("armure attendue dans l'inventaire, got %v", s.Player.Inventory)
 	}
 }
 

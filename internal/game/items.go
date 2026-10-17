@@ -67,6 +67,22 @@ func RollItem(rng *RNG, x, y, depth int) *Item {
 	}
 }
 
+// ItemValue renvoie la valeur de base d'un objet en pièces d'or (pour le marchand).
+func ItemValue(it *Item) int {
+	switch it.Kind {
+	case ItemGold:
+		return it.Power
+	case ItemPotionHP, ItemPotionMana:
+		return 10 + it.Power
+	case ItemWeapon:
+		return 20 + it.Power*15
+	case ItemArmor:
+		return 20 + it.Power*15
+	default:
+		return 0
+	}
+}
+
 // RollItemCount renvoie le nombre d'objets déposés sur un étage.
 func RollItemCount(rng *RNG, depth int) int {
 	return 3 + rng.Intn(3) + depth/2

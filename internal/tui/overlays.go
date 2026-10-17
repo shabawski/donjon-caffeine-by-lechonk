@@ -17,7 +17,8 @@ func (m *Model) viewHelp() string {
 		{"f", "boule de feu (8 mana, dégâts de zone)"},
 		{"g ou >", "descendre l'escalier (se tenir dessus)"},
 		{"G ou <", "remonter l'escalier (se tenir dessus)"},
-		{"i", "inventaire / équipement"},
+		{"i", "inventaire (équiper, utiliser, jeter)"},
+		{"m", "marchand (se tenir près du PNJ M)"},
 		{"?", "cette aide"},
 		{"Q (maj) ou esc", "retour au menu (abandon)"},
 		{"Objectif", "tuer le Seigneur des Tasses au 10e étage"},
@@ -29,7 +30,8 @@ func (m *Model) viewHelp() string {
 	return b.String()
 }
 
-// viewInventory rend l'équipement et les statistiques du joueur.
+// viewInventory rend l'inventaire : équipement actuel + liste des objets
+// gardés sur soi, avec curseur de sélection (e équiper, u utiliser, d jeter).
 func (m *Model) viewInventory() string {
 	p := &m.state.Player
 	var b strings.Builder
@@ -43,6 +45,33 @@ func (m *Model) viewInventory() string {
 	b.WriteString(fmt.Sprintf("  DEF    : %d (base %d)\n", p.EffectiveDefense(), p.Defense))
 	b.WriteString(fmt.Sprintf("  Niveau : %d   XP : %d/%d\n", p.Level, p.XP, game.XPNeededForLevel(p.Level+1)))
 	b.WriteString(fmt.Sprintf("  Kills  : %d   Tours : %d\n", p.Kills, p.Turns))
-	b.WriteString("\n" + styleDim.Render("esc/i/entrée : retour au jeu"))
+	b.WriteString(fmt.Sprintf("\n── Objets (%d) ──\n", len(p.Inventory)))
+	if len(p.Inventory) == 0 {
+		b.WriteString(styleDim.Render("  (inventaire vide — ramasse des objets au sol)\n"))
+	}
+	for i, it := range p.Inventory {
+		cursor := "  "
+		if i == m.invCursor {
+			cursor = styleCursor.Render("> ")
+		}
+		b.WriteString(cursor + fmt.Sprintf("[%d] %s\n", i, itemDesc(it)))
+	}
+	b.WriteString("\n" + styleDim.Render("↑↓ naviguer · e équiper · u utiliser · d jeter · esc/i retour"))
 	return b.String()
+}
+
+// itemDesc décrit un objet de l'inventaire (nom + effet).
+func itemDesc(it *game.Item) string {
+	switch it.Kind {
+	case game.ItemWeapon:
+		return fmt.Sprintf("%-20s (arme +%d ATK)", it.Name, it.Power)
+	case game.ItemArmor:
+		return fmt.Sprintf("%-20s (armure +%d DEF)", it.Name, it.Power)
+	case game.ItemPotionHP:
+		return fmt.Sprintf("%-20s (+%d PV)", it.Name, it.Power)
+	case game.ItemPotionMana:
+		return fmt.Sprintf("%-20s (+%d mana)", it.Name, it.Power)
+	default:
+		return it.Name
+	}
 }

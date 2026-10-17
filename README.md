@@ -35,7 +35,8 @@ go build -o donjon-cafeine .
 | `f` | lancer une boule de feu (8 mana, dégâts de zone autour de la cible) |
 | `g` ou `>` | descendre l'escalier (se tenir sur la case `>`) |
 | `G` ou `<` | remonter l'escalier (se tenir sur la case `<`) |
-| `i` | inventaire / équipement |
+| `i` | inventaire (équiper `e`, utiliser `u`, jeter `d`) |
+| `m` | marchand (se tenir près du PNJ `M`) |
 | `?` | aide intégrée |
 | `Q` (majuscule) ou `esc` | retour au menu (abandon de la partie) |
 | `r` | rejouer (sur l'écran de fin) |
@@ -63,8 +64,13 @@ go build -o donjon-cafeine .
   exception : il te flaire à travers les murs.
 - **IA ennemie** : patrouille quand le joueur n'est pas détecté, poursuite par
   plus court chemin (BFS) quand il l'est, fuite pour les lâches.
-- **Objets** (ramassage automatique en marchant dessus) : pièces d'or, potions de
-  soin et de mana, armes et armures (tu gardes automatiquement la meilleure).
+- **Objets** : au sol, ramassés en marchant dessus. L'or est crédité directement ;
+  les **armes, armures et potions vont dans l'inventaire** (pas d'auto-équip).
+  Depuis l'inventaire (`i`) : `e` équiper, `u` utiliser une potion, `d` jeter.
+- **Marchand** : un PNJ `M` campe sur les **étages pairs** (hors dernier étage).
+  Touche `m` à côté de lui pour ouvrir sa boutique : onglet **Achat** (armes,
+  armures, potions adaptées à la profondeur) et onglet **Vente** (revente à 50%
+  de la valeur).
 - **Progression** : XP à chaque kill avec **variance ±20 %** (min-max déterministe),
   paliers de niveau à `30×n` XP cumulée, montée de niveau (max 20) : +10 PV max,
   +1 ATK, +1 DEF, +4 mana max. PV de départ : 40.
@@ -121,7 +127,8 @@ internal/game/        moteur de jeu pur — AUCUNE dépendance TUI, testé unita
   entity.go           joueur, monstres (7 types), boss (stats, glyphes, templates)
   combat.go           résolution d'attaque (défense, variance, critiques)
   ai.go               IA ennemie + pathfinding BFS + détection par ligne de vue
-  items.go            objets (or, potions, armes, armures)
+  items.go            objets (or, potions, armes, armures) + ItemValue (prix marchand)
+  merchant.go         PNJ marchand (spawn étages pairs, boutique, achat/vente)
   progression.go      XP (paliers 30*n, variance ±20%), niveaux, attaque/défense effectives
   state.go            état de partie, tours, sorts, victoire/défaite, score, journal, Ascend()
   auto.go             bot AutoPlay (mode --demo et tests d'intégration, farm par étage)
@@ -130,7 +137,8 @@ internal/tui/         interface terminal (BubbleTea + Lipgloss), plein écran
   keys.go             ZQSD/HJKL/flèches → déplacements
   styles.go           styles Lipgloss (variables package-level)
   menu.go             menu principal + tableau des scores
-  overlays.go         aide (?) et inventaire (i)
+  overlays.go         aide (?) et inventaire (i) avec liste d'objets
+  shop.go             écran marchand (achat/vente, onglets)
   gameover.go         écrans victoire / game over
 internal/score/       persistance des high scores (JSON, top 10, écriture atomique)
 ```
