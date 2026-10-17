@@ -15,11 +15,11 @@ func TestSnapshotCapturesState(t *testing.T) {
 	if snap.Depth != 1 {
 		t.Fatalf("étage attendu 1, got %d", snap.Depth)
 	}
-	if snap.Width != s.World.Width || snap.Height != s.World.Height {
-		t.Fatalf("dimensions %dx%d, attendu %dx%d", snap.Width, snap.Height, s.World.Width, s.World.Height)
+	if snap.Width != s.curMap().World.Width || snap.Height != s.curMap().World.Height {
+		t.Fatalf("dimensions %dx%d, attendu %dx%d", snap.Width, snap.Height, s.curMap().World.Width, s.curMap().World.Height)
 	}
-	if len(snap.Tiles) != len(s.World.Tiles) {
-		t.Fatalf("tiles: %d, attendu %d", len(snap.Tiles), len(s.World.Tiles))
+	if len(snap.Tiles) != len(s.curMap().World.Tiles) {
+		t.Fatalf("tiles: %d, attendu %d", len(snap.Tiles), len(s.curMap().World.Tiles))
 	}
 	if snap.Player.X != s.Player.X || snap.Player.Y != s.Player.Y {
 		t.Fatalf("position joueur (%d,%d), attendu (%d,%d)", snap.Player.X, snap.Player.Y, s.Player.X, s.Player.Y)
@@ -27,10 +27,10 @@ func TestSnapshotCapturesState(t *testing.T) {
 	if snap.Player.Level != s.Player.Level || snap.Player.Gold != s.Player.Gold {
 		t.Fatalf("stats joueur divergent: %+v", snap.Player)
 	}
-	if len(snap.Enemies) != s.Entities.Len() {
-		t.Fatalf("ennemis %d, attendu %d", len(snap.Enemies), s.Entities.Len())
+	if len(snap.Enemies) != s.curMap().Entities.Len() {
+		t.Fatalf("ennemis %d, attendu %d", len(snap.Enemies), s.curMap().Entities.Len())
 	}
-	if len(snap.Visible) != len(s.FOV.Visible) || len(snap.Explored) != len(s.FOV.Explored) {
+	if len(snap.Visible) != len(s.curFOV().Visible) || len(snap.Explored) != len(s.curFOV().Explored) {
 		t.Fatal("FOV mal dimensionné")
 	}
 	if len(snap.Log) != len(s.Log) {
@@ -88,7 +88,7 @@ func TestSnapshotMerchant(t *testing.T) {
 		t.Fatal("pas de marchand attendu à l'étage 1")
 	}
 	// Descend à l'étage 2 (pair) : marchand attendu
-	s.Player.X, s.Player.Y = s.World.StairsX, s.World.StairsY
+	s.Player.X, s.Player.Y = s.curMap().World.StairsX, s.curMap().World.StairsY
 	if !s.Descend() {
 		t.Fatal("descente impossible")
 	}

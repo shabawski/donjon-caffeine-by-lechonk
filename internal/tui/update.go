@@ -59,6 +59,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.client = msg.client
 		m.snapshot = msg.snapshot
+		m.mode = msg.snapshot.Mode // conserve le mode pour rejouer (r)
 		m.screen = screenPlaying
 		m.scoreSaved = false
 		m.pendingInput = false
@@ -110,11 +111,12 @@ func (m *Model) waitSnapshot() tea.Cmd {
 	}
 }
 
-// startNewGame crée une nouvelle partie solo (nouvelle graine) et retourne
-// une commande qui construit le client local et attend le snapshot initial.
-func (m *Model) startNewGame() tea.Cmd {
+// startNewGame crée une nouvelle partie solo (nouvelle graine) dans le mode
+// donné et retourne une commande qui construit le client local et attend le
+// snapshot initial.
+func (m *Model) startNewGame(mode game.GameMode) tea.Cmd {
 	return func() tea.Msg {
-		c := client.NewLocalClient(time.Now().UnixNano(), game.DefaultWidth, game.DefaultHeight)
+		c := client.NewLocalClientMode(time.Now().UnixNano(), game.DefaultWidth, game.DefaultHeight, mode)
 		snap, _ := c.NextSnapshot()
 		return newGameMsg{client: c, snapshot: snap}
 	}
@@ -169,21 +171,23 @@ func (m *Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.menuCursor--
 		}
 	case "down", "j", "s":
-		if m.menuCursor < 3 {
+		if m.menuCursor < 4 { // 5 options : COOP, MMORPG, Multi, Scores, Quitter
 			m.menuCursor++
 		}
 	case "enter":
 		switch m.menuCursor {
 		case 0:
-			return m, m.startNewGame() // nouvelle partie solo
+			return m, m.startNewGame(game.ModeCoop) // nouvelle partie COOP (donjon)
 		case 1:
+			return m, m.startNewGame(game.ModeMMORPG) // nouvelle partie MMORPG (monde ouvert)
+		case 2:
 			// Multijoueur : écran de saisie de l'adresse serveur.
 			m.screen = screenConnect
 			m.connectInput = ""
 			m.connectErr = ""
-		case 2:
-			m.screen = screenScores
 		case 3:
+			m.screen = screenScores
+		case 4:
 			return m, tea.Quit
 		}
 	case "q", "esc", "ctrl+c":
@@ -250,6 +254,12 @@ func (m *Model) updatePlaying(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.sendInput(net.InputPayload{Kind: net.InputDescend})
 	case "G", "<":
 		return m.sendInput(net.InputPayload{Kind: net.InputAscend})
+	case "e":
+		// Entrer dans un bâtiment ⌂ adjacent (MMORPG overworld).
+		return m.sendInput(net.InputPayload{Kind: net.InputEnterBuilding})
+	case "x":
+		// Sortir d'un donjon instance vers le monde ouvert (MMORPG).
+		return m.sendInput(net.InputPayload{Kind: net.InputExitBuilding})
 	case "i":
 		m.screen = screenInventory
 		m.invCursor = 0
@@ -341,8 +351,8 @@ func (m *Model) shopListLen() int {
 func (m *Model) updateGameOver(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "r":
-		// Nouvelle partie solo avec une graine aléatoire.
-		return m, m.startNewGame()
+		// Nouvelle partie solo dans le même mode, avec une graine aléatoire.
+		return m, m.startNewGame(m.mode)
 	case "s":
 		m.screen = screenScores
 	case "q", "esc", "ctrl+c":

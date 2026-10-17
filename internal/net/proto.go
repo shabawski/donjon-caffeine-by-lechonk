@@ -44,16 +44,18 @@ type WelcomePayload struct {
 type InputKind string
 
 const (
-	InputMove     InputKind = "move"     // DX/DY : déplacement ou attaque
-	InputWait     InputKind = "wait"     // attendre un tour
-	InputFireball InputKind = "fireball" // LastDX/LastDY : direction du sort
-	InputDescend  InputKind = "descend"  // descendre l'escalier
-	InputAscend   InputKind = "ascend"   // remonter l'escalier
-	InputEquip    InputKind = "equip"    // Index : équiper un objet
-	InputUse      InputKind = "use"      // Index : utiliser une potion
-	InputDrop     InputKind = "drop"     // Index : jeter un objet
-	InputBuy      InputKind = "buy"      // Index : acheter au marchand
-	InputSell     InputKind = "sell"     // Index : vendre au marchand
+	InputMove          InputKind = "move"          // DX/DY : déplacement ou attaque
+	InputWait          InputKind = "wait"          // attendre un tour
+	InputFireball      InputKind = "fireball"      // LastDX/LastDY : direction du sort
+	InputDescend       InputKind = "descend"       // descendre l'escalier
+	InputAscend        InputKind = "ascend"        // remonter l'escalier
+	InputEquip         InputKind = "equip"         // Index : équiper un objet
+	InputUse           InputKind = "use"           // Index : utiliser une potion
+	InputDrop          InputKind = "drop"          // Index : jeter un objet
+	InputBuy           InputKind = "buy"           // Index : acheter au marchand
+	InputSell          InputKind = "sell"          // Index : vendre au marchand
+	InputEnterBuilding InputKind = "enterBuilding" // entrer dans un bâtiment ⌂ (MMORPG overworld)
+	InputExitBuilding  InputKind = "exitBuilding"  // sortir d'un donjon instance (MMORPG)
 )
 
 // InputPayload : action du joueur envoyée au serveur.

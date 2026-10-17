@@ -43,6 +43,7 @@ type Model struct {
 	lastDX       int
 	lastDY       int
 	menuCursor   int
+	mode         game.GameMode // mode de la partie en cours (COOP ou MMORPG)
 	scoreSaved   bool
 	invCursor    int    // curseur dans l'inventaire
 	shopCursor   int    // curseur dans l'écran marchand
@@ -58,7 +59,7 @@ type Model struct {
 // Les dimensions par défaut (80x24) sont remplacées par le premier
 // WindowSizeMsg envoyé par BubbleTea.
 func New(c client.GameClient, snap *game.Snapshot, directPlay bool) *Model {
-	m := &Model{client: c, snapshot: snap, lastDX: 1, width: 80, height: 24}
+	m := &Model{client: c, snapshot: snap, lastDX: 1, width: 80, height: 24, mode: game.ModeCoop}
 	if directPlay {
 		m.screen = screenPlaying
 	} else {

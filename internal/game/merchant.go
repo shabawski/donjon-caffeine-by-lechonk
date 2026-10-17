@@ -61,18 +61,22 @@ func MerchantSellPrice(it *Item) int {
 	return ItemValue(it) / 2
 }
 
-// BuyItem achète l'objet à l'index du shop du marchand présent sur l'étage.
+// BuyItem achète l'objet à l'index du shop du marchand de la map courante.
 // L'objet est ajouté à l'inventaire du joueur ; l'or est débité.
 // Retourne false si pas assez d'or, index invalide, ou pas de marchand.
 func (s *State) BuyItem(shopIndex int) bool {
-	if s.Phase != PhasePlaying || s.World.Merchant == nil {
+	if s.Phase != PhasePlaying {
 		return false
 	}
-	m := s.World.Merchant
-	if shopIndex < 0 || shopIndex >= len(m.Shop) {
+	m := s.curMap()
+	if m == nil || m.Merchant == nil {
 		return false
 	}
-	si := m.Shop[shopIndex]
+	merch := m.Merchant
+	if shopIndex < 0 || shopIndex >= len(merch.Shop) {
+		return false
+	}
+	si := merch.Shop[shopIndex]
 	if s.Player.Gold < si.Price {
 		s.Logf("Pas assez d'or (%d/%d).", s.Player.Gold, si.Price)
 		return false
@@ -81,15 +85,19 @@ func (s *State) BuyItem(shopIndex int) bool {
 	s.Player.Inventory = append(s.Player.Inventory, si.Item)
 	s.Logf("💰 Tu achètes %s pour %d or.", si.Item.Name, si.Price)
 	// Retire l'objet du shop (swap-remove).
-	m.Shop = append(m.Shop[:shopIndex], m.Shop[shopIndex+1:]...)
+	merch.Shop = append(merch.Shop[:shopIndex], merch.Shop[shopIndex+1:]...)
 	return true
 }
 
 // SellItem vend l'objet à l'index de l'inventaire du joueur au marchand
-// présent sur l'étage. L'or est crédité (50% de la valeur).
+// de la map courante. L'or est crédité (50% de la valeur).
 // Retourne false si index invalide ou pas de marchand.
 func (s *State) SellItem(invIndex int) bool {
-	if s.Phase != PhasePlaying || s.World.Merchant == nil {
+	if s.Phase != PhasePlaying {
+		return false
+	}
+	m := s.curMap()
+	if m == nil || m.Merchant == nil {
 		return false
 	}
 	if invIndex < 0 || invIndex >= len(s.Player.Inventory) {
@@ -103,13 +111,13 @@ func (s *State) SellItem(invIndex int) bool {
 	return true
 }
 
-// MerchantAdjacent indique si le joueur est adjacent au marchand (ou dessus).
+// MerchantAdjacent indique si le joueur est adjacent au marchand de sa map courante.
 func (s *State) MerchantAdjacent() bool {
-	m := s.World.Merchant
-	if m == nil {
+	m := s.curMap()
+	if m == nil || m.Merchant == nil {
 		return false
 	}
-	return chebDist(s.Player.X, s.Player.Y, m.X, m.Y) <= 1
+	return chebDist(s.Player.X, s.Player.Y, m.Merchant.X, m.Merchant.Y) <= 1
 }
 
 func min(a, b int) int {

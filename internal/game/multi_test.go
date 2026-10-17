@@ -49,7 +49,7 @@ func TestEnemyTurnAttacksOtherPlayer(t *testing.T) {
 	other.MaxHP = 40
 	s.Others = []*Player{other}
 	rat := s.addEnemy(KindRat, 7, 5) // adjacent à l'autre joueur (8,5)
-	ComputeFOV(s.World, s.FOV, 2, 2, PlayerViewRange)
+	ComputeFOV(s.curMap().World, s.curFOV(), 2, 2, PlayerViewRange)
 	s.EnemyTurn(rat)
 	if other.HP >= 40 {
 		t.Fatal("le rat doit attaquer l'autre joueur (focus), pas le local")
@@ -70,7 +70,7 @@ func TestSnapshotForPlayer(t *testing.T) {
 	s.Others = []*Player{other}
 	// FOV centré sur l'autre joueur.
 	fov := NewFOV(20 * 20)
-	ComputeFOV(s.World, fov, 10, 5, PlayerViewRange)
+	ComputeFOV(s.curMap().World, fov, 10, 5, PlayerViewRange)
 	snap := s.SnapshotForPlayer(other, fov, 1)
 	if snap.PlayerID != 1 {
 		t.Fatalf("PlayerID attendu 1, got %d", snap.PlayerID)
@@ -91,7 +91,7 @@ func TestSnapshotForPlayer(t *testing.T) {
 // TestSnapshotForPlayerSolo vérifie qu'en solo, Others est vide.
 func TestSnapshotForPlayerSolo(t *testing.T) {
 	s := newTestState(1, 20, 20)
-	snap := s.SnapshotForPlayer(&s.Player, s.FOV, 0)
+	snap := s.SnapshotForPlayer(&s.Player, s.curFOV(), 0)
 	if len(snap.Others) != 0 {
 		t.Fatalf("pas d'autres joueurs en solo, got %d", len(snap.Others))
 	}
@@ -110,6 +110,6 @@ func TestAllPlayers(t *testing.T) {
 	other.ID = 1
 	s.Others = []*Player{other}
 	if got := len(s.AllPlayers()); got != 2 {
-		t.Fatalf("multi: 2 joueurs attendus, got %d", got)
+		t.Fatalf("multi: 2 joueurs attendu, got %d", got)
 	}
 }

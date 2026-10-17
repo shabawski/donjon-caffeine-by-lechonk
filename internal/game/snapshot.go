@@ -9,6 +9,7 @@ package game
 type Snapshot struct {
 	Seed         int64             `json:"seed"`
 	Phase        Phase             `json:"phase"`
+	Mode         GameMode          `json:"mode"` // COOP (donjon) ou MMORPG (monde ouvert)
 	Turn         int               `json:"turn"`
 	Depth        int               `json:"depth"`
 	Width        int               `json:"width"`
@@ -67,49 +68,45 @@ type MerchantSnapshot struct {
 	Shop  []ShopItem `json:"shop"`
 }
 
-// Snapshot capture l'état visible actuel de la partie.
-// Le FOV (Visible/Explored) est celui du joueur local ; en multijoueur,
-// le serveur construit un snapshot par client avec son propre FOV.
+// Snapshot capture l'état visible de la map courante du joueur local.
+// Le FOV (Visible/Explored) est celui du joueur local dans sa map.
 func (s *State) Snapshot() *Snapshot {
+	m := s.curMap()
+	if m == nil {
+		return &Snapshot{Seed: s.Seed, Phase: s.Phase}
+	}
+	fov := s.curFOV()
 	snap := &Snapshot{
 		Seed:         s.Seed,
 		Phase:        s.Phase,
+		Mode:         s.Mode,
 		Turn:         s.Turn,
-		Depth:        s.World.Depth,
-		Width:        s.World.Width,
-		Height:       s.World.Height,
-		Tiles:        s.World.Tiles,
-		StairsX:      s.World.StairsX,
-		StairsY:      s.World.StairsY,
-		HasStairs:    s.World.HasStairs,
-		StairsUpX:    s.World.StairsUpX,
-		StairsUpY:    s.World.StairsUpY,
-		HasStairsUp:  s.World.HasStairsUp,
-		Items:        s.Items,
-		Visible:      s.FOV.Visible,
-		Explored:     s.FOV.Explored,
+		Depth:        m.Depth,
+		Width:        m.World.Width,
+		Height:       m.World.Height,
+		Tiles:        m.World.Tiles,
+		StairsX:      m.World.StairsX,
+		StairsY:      m.World.StairsY,
+		HasStairs:    m.World.HasStairs,
+		StairsUpX:    m.World.StairsUpX,
+		StairsUpY:    m.World.StairsUpY,
+		HasStairsUp:  m.World.HasStairsUp,
+		Items:        m.Items,
 		Log:          s.Log,
 		Won:          s.Won,
 		CauseOfDeath: s.CauseOfDeath,
-		Player: PlayerSnapshot{
-			X: s.Player.X, Y: s.Player.Y, Glyph: s.Player.Glyph,
-			Level: s.Player.Level, XP: s.Player.XP, Gold: s.Player.Gold,
-			HP: s.Player.HP, MaxHP: s.Player.MaxHP,
-			Mana: s.Player.Mana, MaxMana: s.Player.MaxMana,
-			Attack: s.Player.Attack, Defense: s.Player.Defense,
-			WeaponName: s.Player.WeaponName, WeaponBonus: s.Player.WeaponBonus,
-			ArmorName: s.Player.ArmorName, ArmorBonus: s.Player.ArmorBonus,
-			EffectiveAtk: s.Player.EffectiveAttack(), EffectiveDef: s.Player.EffectiveDefense(),
-			Kills: s.Player.Kills, Turns: s.Player.Turns,
-			Inventory: s.Player.Inventory,
-		},
-		Enemies: s.Entities.AllSnapshots(),
+		Player:       playerSnapshotOf(&s.Player),
+		Enemies:      m.Entities.AllSnapshots(),
 	}
-	if s.World.Merchant != nil {
+	if fov != nil {
+		snap.Visible = fov.Visible
+		snap.Explored = fov.Explored
+	}
+	if m.Merchant != nil {
 		snap.Merchant = &MerchantSnapshot{
-			X: s.World.Merchant.X, Y: s.World.Merchant.Y,
-			Glyph: s.World.Merchant.Glyph, Name: s.World.Merchant.Name,
-			Shop: s.World.Merchant.Shop,
+			X: m.Merchant.X, Y: m.Merchant.Y,
+			Glyph: m.Merchant.Glyph, Name: m.Merchant.Name,
+			Shop: m.Merchant.Shop,
 		}
 	}
 	return snap
@@ -184,19 +181,54 @@ func playerSnapshotOf(p *Player) PlayerSnapshot {
 }
 
 // SnapshotForPlayer construit un snapshot pour un joueur spécifique (multi).
-// Le PlayerSnapshot, le FOV (Visible/Explored) et le PlayerID sont ceux de CE
-// joueur. Les autres joueurs sont exposés dans Others (rendu multi).
+// Le snapshot reflète la MAP DU JOUEUR (pas la map courante du serveur) :
+// tuiles, entités, items, marchand de SA map, et son FOV personnel.
+// Les autres joueurs exposés dans Others sont ceux sur la MÊME map.
 func (s *State) SnapshotForPlayer(p *Player, fov *FOV, playerID int) *Snapshot {
-	snap := s.Snapshot()
-	snap.PlayerID = playerID
-	snap.Player = playerSnapshotOf(p)
+	m := s.Maps.Get(p.MapID)
+	if m == nil {
+		m = s.curMap()
+	}
+	if m == nil {
+		return &Snapshot{Seed: s.Seed, Phase: s.Phase}
+	}
+	snap := &Snapshot{
+		Seed:         s.Seed,
+		Phase:        s.Phase,
+		Mode:         s.Mode,
+		Turn:         s.Turn,
+		Depth:        m.Depth,
+		Width:        m.World.Width,
+		Height:       m.World.Height,
+		Tiles:        m.World.Tiles,
+		StairsX:      m.World.StairsX,
+		StairsY:      m.World.StairsY,
+		HasStairs:    m.World.HasStairs,
+		StairsUpX:    m.World.StairsUpX,
+		StairsUpY:    m.World.StairsUpY,
+		HasStairsUp:  m.World.HasStairsUp,
+		Items:        m.Items,
+		Log:          s.Log,
+		Won:          s.Won,
+		CauseOfDeath: s.CauseOfDeath,
+		PlayerID:     playerID,
+		Player:       playerSnapshotOf(p),
+		Enemies:      m.Entities.AllSnapshots(),
+	}
 	if fov != nil {
 		snap.Visible = fov.Visible
 		snap.Explored = fov.Explored
 	}
-	// Autres joueurs : tous les joueurs connectés sauf celui-ci (comparaison par ID).
-	snap.Others = make([]PlayerSnapshot, 0, len(s.Others))
-	for _, op := range s.AllPlayers() {
+	if m.Merchant != nil {
+		snap.Merchant = &MerchantSnapshot{
+			X: m.Merchant.X, Y: m.Merchant.Y,
+			Glyph: m.Merchant.Glyph, Name: m.Merchant.Name,
+			Shop: m.Merchant.Shop,
+		}
+	}
+	// Autres joueurs sur la MÊME map (comparaison par ID).
+	snap.Others = make([]PlayerSnapshot, 0)
+	for _, op := range s.playersOnMap(m.ID) {
 		if op.ID == p.ID {
 			continue
 		}

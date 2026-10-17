@@ -35,15 +35,36 @@ func (m *Model) View() string {
 // viewGame rend le titre, la carte (viewport centré sur le joueur) à gauche,
 // le HUD à droite, et un pied de page avec les raccourcis clavier.
 func (m *Model) viewGame() string {
-	title := styleTitle.Render(fmt.Sprintf("☕ Donjon Caféiné — étage %d/%d", m.snapshot.Depth, game.MaxDepth))
+	title := m.gameTitle()
 	mapW := m.width - hudWidth - 2
 	if mapW < m.viewW {
 		mapW = m.viewW
 	}
 	mapBlock := lipgloss.NewStyle().Width(mapW).Render(m.renderViewport())
 	body := lipgloss.JoinHorizontal(lipgloss.Top, mapBlock, m.renderHUD())
-	footer := styleDim.Render("ZQSD/HJKL/flèches: bouger · f: feu · g/G: escalier · i: inventaire · m: marchand · ?: aide · Q: quitter")
-	return title + "\n" + body + "\n" + footer
+	return title + "\n" + body + "\n" + m.gameFooter()
+}
+
+// gameTitle affiche le contexte de la map courante : monde ouvert (MMORPG)
+// ou étage du donjon.
+func (m *Model) gameTitle() string {
+	if m.snapshot.Mode == game.ModeMMORPG && m.snapshot.Depth == 0 {
+		return styleTitle.Render("☕ Donjon Caféiné — 🌍 Monde ouvert")
+	}
+	return styleTitle.Render(fmt.Sprintf("☕ Donjon Caféiné — étage %d/%d", m.snapshot.Depth, game.MaxDepth))
+}
+
+// gameFooter affiche les raccourcis clavier adaptés au contexte (MMORPG :
+// interaction avec les bâtiments ⌂ en plus des commandes de base).
+func (m *Model) gameFooter() string {
+	base := "ZQSD/HJKL/flèches: bouger · f: feu · i: inventaire · ?: aide · Q: quitter"
+	if m.snapshot.Mode != game.ModeMMORPG {
+		return styleDim.Render(base + " · g/G: escalier · m: marchand")
+	}
+	if m.snapshot.Depth == 0 {
+		return styleDim.Render(base + " · e: entrer (⌂)")
+	}
+	return styleDim.Render(base + " · g/G: escalier · x: sortir · m: marchand")
 }
 
 // renderViewport dessine la portion du monde visible dans le viewport,
@@ -105,6 +126,8 @@ func glyphAt(s *game.Snapshot, x, y int) (rune, lipgloss.Style) {
 		return t.Glyph(), styleStairs
 	case game.TileStairsUp:
 		return t.Glyph(), styleStairsUp
+	case game.TileBuilding:
+		return t.Glyph(), styleBuilding
 	case game.TileWall:
 		return t.Glyph(), styleWall
 	default:

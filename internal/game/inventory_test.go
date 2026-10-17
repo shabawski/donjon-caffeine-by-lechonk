@@ -125,14 +125,14 @@ func TestMerchantSpawnOnEvenFloors(t *testing.T) {
 	for seed := int64(1); seed <= 5; seed++ {
 		s := NewState(seed)
 		// Descend jusqu'à l'étage 2 (pair) : marchand attendu.
-		s.Player.X, s.Player.Y = s.World.StairsX, s.World.StairsY
+		s.Player.X, s.Player.Y = s.curMap().World.StairsX, s.curMap().World.StairsY
 		if !s.Descend() {
 			t.Fatalf("seed %d: descente étage 2 impossible", seed)
 		}
-		if s.World.Merchant == nil {
+		if s.curMap().Merchant == nil {
 			t.Fatalf("seed %d: marchand attendu à l'étage 2 (pair)", seed)
 		}
-		if len(s.World.Merchant.Shop) == 0 {
+		if len(s.curMap().Merchant.Shop) == 0 {
 			t.Fatalf("seed %d: la boutique du marchand ne doit pas être vide", seed)
 		}
 	}
@@ -142,7 +142,7 @@ func TestMerchantSpawnOnEvenFloors(t *testing.T) {
 func TestMerchantAbsentOnOddFloors(t *testing.T) {
 	for seed := int64(1); seed <= 5; seed++ {
 		s := NewState(seed) // étage 1 (impair)
-		if s.World.Merchant != nil {
+		if s.curMap().Merchant != nil {
 			t.Fatalf("seed %d: pas de marchand attendu à l'étage 1 (impair)", seed)
 		}
 	}
@@ -152,10 +152,10 @@ func TestMerchantAbsentOnOddFloors(t *testing.T) {
 func TestBuyItem(t *testing.T) {
 	s := newTestState(1, 10, 10)
 	s.Player.X, s.Player.Y = 3, 3
-	s.World.Merchant = NewMerchant(NewRNG(1), 4, 3, 2)
+	s.curMap().Merchant = NewMerchant(NewRNG(1), 4, 3, 2)
 	s.Player.Gold = 1000
-	shopLen := len(s.World.Merchant.Shop)
-	first := s.World.Merchant.Shop[0]
+	shopLen := len(s.curMap().Merchant.Shop)
+	first := s.curMap().Merchant.Shop[0]
 	price := first.Price
 	if !s.BuyItem(0) {
 		t.Fatal("l'achat doit réussir avec assez d'or")
@@ -166,15 +166,15 @@ func TestBuyItem(t *testing.T) {
 	if len(s.Player.Inventory) != 1 || s.Player.Inventory[0].Name != first.Item.Name {
 		t.Fatalf("l'objet acheté doit être dans l'inventaire, got %v", s.Player.Inventory)
 	}
-	if len(s.World.Merchant.Shop) != shopLen-1 {
-		t.Fatalf("l'objet acheté doit être retiré du shop, %d restant(s)", len(s.World.Merchant.Shop))
+	if len(s.curMap().Merchant.Shop) != shopLen-1 {
+		t.Fatalf("l'objet acheté doit être retiré du shop, %d restant(s)", len(s.curMap().Merchant.Shop))
 	}
 }
 
 // TestBuyItemNotEnoughGold vérifie qu'un achat échoue sans assez d'or.
 func TestBuyItemNotEnoughGold(t *testing.T) {
 	s := newTestState(1, 10, 10)
-	s.World.Merchant = NewMerchant(NewRNG(1), 4, 3, 2)
+	s.curMap().Merchant = NewMerchant(NewRNG(1), 4, 3, 2)
 	s.Player.Gold = 0
 	if s.BuyItem(0) {
 		t.Fatal("l'achat doit échouer sans or")
@@ -199,7 +199,7 @@ func TestBuyItemNoMerchant(t *testing.T) {
 // TestSellItem vérifie la vente : or crédité (50%), objet retiré de l'inventaire.
 func TestSellItem(t *testing.T) {
 	s := newTestState(1, 10, 10)
-	s.World.Merchant = NewMerchant(NewRNG(1), 4, 3, 2)
+	s.curMap().Merchant = NewMerchant(NewRNG(1), 4, 3, 2)
 	it := &Item{Kind: ItemWeapon, Name: "épée courte", Glyph: '/', Power: 2} // valeur 50
 	s.Player.Inventory = []*Item{it}
 	s.Player.Gold = 10
@@ -231,7 +231,7 @@ func TestSellItemNoMerchant(t *testing.T) {
 func TestMerchantAdjacent(t *testing.T) {
 	s := newTestState(1, 10, 10)
 	s.Player.X, s.Player.Y = 3, 3
-	s.World.Merchant = &Merchant{X: 4, Y: 3, Glyph: 'M', Name: "marchand"}
+	s.curMap().Merchant = &Merchant{X: 4, Y: 3, Glyph: 'M', Name: "marchand"}
 	if !s.MerchantAdjacent() {
 		t.Fatal("le joueur adjacent au marchand doit être détecté")
 	}
@@ -239,7 +239,7 @@ func TestMerchantAdjacent(t *testing.T) {
 	if s.MerchantAdjacent() {
 		t.Fatal("le joueur loin du marchand ne doit pas être détecté")
 	}
-	s.World.Merchant = nil
+	s.curMap().Merchant = nil
 	if s.MerchantAdjacent() {
 		t.Fatal("sans marchand, MerchantAdjacent doit être false")
 	}

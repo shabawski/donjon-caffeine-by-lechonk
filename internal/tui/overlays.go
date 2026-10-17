@@ -17,6 +17,8 @@ func (m *Model) viewHelp() string {
 		{"f", "boule de feu (8 mana, dégâts de zone)"},
 		{"g ou >", "descendre l'escalier (se tenir dessus)"},
 		{"G ou <", "remonter l'escalier (se tenir dessus)"},
+		{"e", "entrer dans un bâtiment ⌂ (MMORPG, monde ouvert)"},
+		{"x", "sortir du donjon vers le monde ouvert (MMORPG)"},
 		{"i", "inventaire (équiper, utiliser, jeter)"},
 		{"m", "marchand (se tenir près du PNJ M)"},
 		{"?", "cette aide"},

@@ -23,30 +23,30 @@ func TestClampWorldSize(t *testing.T) {
 
 func TestNewStateSized(t *testing.T) {
 	s := NewStateSized(42, 60, 30)
-	if s.World.Width != 60 || s.World.Height != 30 {
-		t.Fatalf("dimensions attendues 60x30, got %dx%d", s.World.Width, s.World.Height)
+	if s.curMap().World.Width != 60 || s.curMap().World.Height != 30 {
+		t.Fatalf("dimensions attendues 60x30, got %dx%d", s.curMap().World.Width, s.curMap().World.Height)
 	}
-	if s.FOV == nil || len(s.FOV.Visible) != 60*30 {
-		t.Fatalf("FOV mal dimensionné: %d cases", len(s.FOV.Visible))
+	if s.curFOV() == nil || len(s.curFOV().Visible) != 60*30 {
+		t.Fatalf("FOV mal dimensionné: %d cases", len(s.curFOV().Visible))
 	}
 }
 
 func TestNewStateSizedClampsToMin(t *testing.T) {
 	s := NewStateSized(42, 5, 3)
-	if s.World.Width != MinWidth || s.World.Height != MinHeight {
+	if s.curMap().World.Width != MinWidth || s.curMap().World.Height != MinHeight {
 		t.Fatalf("dimensions attendues %dx%d, got %dx%d",
-			MinWidth, MinHeight, s.World.Width, s.World.Height)
+			MinWidth, MinHeight, s.curMap().World.Width, s.curMap().World.Height)
 	}
 }
 
 func TestNewStateSizedKeepsDimensionsAcrossFloors(t *testing.T) {
 	s := NewStateSized(42, 60, 30)
 	// Descend à l'étage 2 via l'escalier.
-	s.Player.X, s.Player.Y = s.World.StairsX, s.World.StairsY
+	s.Player.X, s.Player.Y = s.curMap().World.StairsX, s.curMap().World.StairsY
 	if !s.Descend() {
 		t.Fatal("la descente doit réussir depuis l'escalier")
 	}
-	if s.World.Width != 60 || s.World.Height != 30 {
-		t.Fatalf("dimensions non conservées à l'étage 2: %dx%d", s.World.Width, s.World.Height)
+	if s.curMap().World.Width != 60 || s.curMap().World.Height != 30 {
+		t.Fatalf("dimensions non conservées à l'étage 2: %dx%d", s.curMap().World.Width, s.curMap().World.Height)
 	}
 }

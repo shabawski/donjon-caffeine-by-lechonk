@@ -40,12 +40,22 @@ type LocalClient struct {
 // NewLocalClient crée un client solo avec une partie neuve (seed, dimensions).
 // Le serveur embarqué envoie le snapshot initial immédiatement.
 func NewLocalClient(seed int64, width, height int) *LocalClient {
+	return NewLocalClientMode(seed, width, height, game.ModeCoop)
+}
+
+// NewLocalClientMode crée un client solo avec le mode de jeu donné
+// (ModeCoop = donjon, ModeMMORPG = monde ouvert).
+func NewLocalClientMode(seed int64, width, height int, mode game.GameMode) *LocalClient {
 	c := &LocalClient{
 		inCh:  make(chan net.InputPayload, 16),
 		outCh: make(chan *game.Snapshot, 16),
 		done:  make(chan struct{}),
 	}
-	c.state = game.NewStateSized(seed, width, height)
+	if mode == game.ModeMMORPG {
+		c.state = game.NewStateMMORPG(seed, width, height)
+	} else {
+		c.state = game.NewStateSized(seed, width, height)
+	}
 	go c.serverLoop()
 	return c
 }
@@ -91,6 +101,10 @@ func (c *LocalClient) applyInput(in net.InputPayload) {
 		s.BuyItem(in.Index)
 	case net.InputSell:
 		s.SellItem(in.Index)
+	case net.InputEnterBuilding:
+		s.EnterBuilding()
+	case net.InputExitBuilding:
+		s.ExitBuilding()
 	}
 }
 

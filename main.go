@@ -11,6 +11,7 @@
 //	donjon-cafeine --seed 42          partie solo reproductible
 //	donjon-cafeine --connect host:port  multijoueur (serveur TCP distant)
 //	donjon-cafeine --demo --seed 42   partie automatique headless (vérification)
+//	donjon-cafeine --demo --mode mmorpg --seed 42   démo MMORPG (monde ouvert)
 package main
 
 import (
@@ -29,6 +30,7 @@ func main() {
 	demo := flag.Bool("demo", false, "partie automatique headless (vérification de bout en bout)")
 	maxTurns := flag.Int("max-turns", 30000, "limite de tours en mode --demo")
 	connect := flag.String("connect", "", "se connecter à un serveur distant (host:port, multijoueur)")
+	mode := flag.String("mode", "coop", "mode de la partie --demo : coop (donjon) ou mmorpg (monde ouvert)")
 	flag.Parse()
 
 	if *demo {
@@ -36,7 +38,11 @@ func main() {
 		if s == 0 {
 			s = time.Now().UnixNano()
 		}
-		fmt.Println(game.AutoPlay(s, *maxTurns))
+		if *mode == "mmorpg" {
+			fmt.Println(game.AutoPlayMMORPG(s, *maxTurns))
+		} else {
+			fmt.Println(game.AutoPlay(s, *maxTurns))
+		}
 		return
 	}
 

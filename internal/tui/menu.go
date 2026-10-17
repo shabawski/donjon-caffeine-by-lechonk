@@ -14,7 +14,13 @@ func (m *Model) viewMenu() string {
 	b.WriteString("   Le Seigneur des Tasses a volé tout le café de l'équipe.\n")
 	b.WriteString("   Descends les 10 étages du donjon, bats le boss, récupère le café.\n")
 	b.WriteString("\n\n")
-	items := []string{"Nouvelle partie (solo)", "Multijoueur (TCP)", "Meilleurs scores", "Quitter"}
+	items := []string{
+		"Nouvelle partie — COOP (donjon)",
+		"Nouvelle partie — MMORPG (monde ouvert)",
+		"Multijoueur (TCP)",
+		"Meilleurs scores",
+		"Quitter",
+	}
 	for i, it := range items {
 		if i == m.menuCursor {
 			b.WriteString(styleCursor.Render("> "+it) + "\n")

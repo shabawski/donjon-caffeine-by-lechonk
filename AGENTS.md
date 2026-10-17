@@ -31,10 +31,28 @@ go run . --demo --seed 42   # partie headless de bout en bout, sans panique
 
 - Un fichier par responsabilité ; un composant TUI par fichier.
 - Touches : ZQSD (AZERTY) + HJKL + flèches. **Sur AZERTY `q` = gauche** ;
-  quitter = `Q` (maj) ou `esc`.
+  quitter = `Q` (maj) ou `esc`. MMORPG : `e` = entrer dans un bâtiment ⌂,
+  `x` = sortir du donjon vers le monde ouvert.
 - Journal du jeu : `State.Logf`, plafonné à `MaxLog` (200) entrées.
 - Un test doit accompagner tout nouveau comportement du moteur (génération, FOV,
-  combat, IA, progression, transitions de phase).
+  combat, IA, progression, transitions de phase, maps/bâtiments).
+
+## Modes de jeu (v3)
+
+- **COOP** (défaut) : donjon 10 étages, victoire = tuer le boss.
+- **MMORPG** : overworld (map racine, sans escaliers) + bâtiments ⌂ portails
+  vers des instances de donjon créées à la demande (`Building.InstanceMapID`).
+  Le mode se choisit au menu (solo) ou via `--mode` (serveur TCP / `--demo`).
+
+## Architecture maps (v3)
+
+- Un **étage = une `Map`** (monde + entités + items + marchand + FOV par
+  joueur) ; plusieurs maps coexistent dans `State.Maps *MapRegistry` (illimité).
+- Chaque joueur a un **`MapID`** ; descendre/monter change de `MapID`, la map
+  parente persiste et les autres maps/joueurs ne sont **pas affectés**.
+- Remonter retourne sur la **même instance** (pas de régénération) :
+  `enterMap` utilise `cur.ParentMapID` en remontée (`NoParentMapID = -1`).
+- Le **focus IA** est restreint à la map courante (`playersOnCurMap`).
 
 ## Livraison
 
@@ -46,5 +64,5 @@ Critère de finition d'une tâche sur ce dépôt : `go build ./...` OK,
 
 - Le boss du dernier étage (10) a volé le café : victoire = le tuer.
 - Dernier étage : pas d'escalier (`World.HasStairs == false`), le boss y campe.
-- Le bot `AutoPlay`/`AutoAction` sert au mode `--demo` ET aux tests
-  d'intégration : ne pas le réserver au CLI.
+- Le bot `AutoPlay`/`AutoPlayMMORPG` + `AutoAction` sert au mode `--demo`
+  (COOP et MMORPG) ET aux tests d'intégration : ne pas le réserver au CLI.

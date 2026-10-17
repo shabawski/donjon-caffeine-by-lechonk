@@ -46,8 +46,8 @@ func TestViewportFollowsPlayerAtEdge(t *testing.T) {
 	m.updateViewport()
 	// Téléporte le joueur dans le coin inférieur droit du monde (via le state).
 	s := c.State()
-	s.Player.X = s.World.Width - 2
-	s.Player.Y = s.World.Height - 2
+	s.Player.X = s.CurrentMap().World.Width - 2
+	s.Player.Y = s.CurrentMap().World.Height - 2
 	// Force un snapshot pour refléter la nouvelle position.
 	m.snapshot = s.Snapshot()
 	m.updateViewport()
@@ -86,9 +86,9 @@ func TestViewportAfterPlayerMove(t *testing.T) {
 	s := c.State()
 	found := false
 outer:
-	for y := 1; y < s.World.Height-1 && !found; y++ {
-		for x := 1; x < s.World.Width-1 && !found; x++ {
-			if s.World.IsWalkable(x, y) && s.World.IsWalkable(x+1, y) {
+	for y := 1; y < s.CurrentMap().World.Height-1 && !found; y++ {
+		for x := 1; x < s.CurrentMap().World.Width-1 && !found; x++ {
+			if s.CurrentMap().World.IsWalkable(x, y) && s.CurrentMap().World.IsWalkable(x+1, y) {
 				s.Player.X, s.Player.Y = x, y
 				found = true
 				break outer

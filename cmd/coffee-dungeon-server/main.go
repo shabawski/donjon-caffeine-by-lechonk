@@ -9,9 +9,10 @@
 //
 // Usage :
 //
-//	coffee-dungeon-server                  écoute sur :27015
+//	coffee-dungeon-server                  écoute sur :27015 (mode COOP)
 //	coffee-dungeon-server --addr :8080     écoute sur le port 8080
 //	coffee-dungeon-server --seed 42        partie reproductible
+//	coffee-dungeon-server --mode mmorpg    monde ouvert (overworld + donjons)
 package main
 
 import (
@@ -27,6 +28,7 @@ import (
 func main() {
 	addr := flag.String("addr", ":27015", "adresse d'écoute TCP (host:port)")
 	seed := flag.Int64("seed", 0, "graine de la partie (0 = aléatoire)")
+	mode := flag.String("mode", "coop", "mode de jeu : coop (donjon) ou mmorpg (monde ouvert)")
 	flag.Parse()
 
 	s := *seed
@@ -34,12 +36,17 @@ func main() {
 		s = time.Now().UnixNano()
 	}
 
-	srv := server.NewServer(s, game.DefaultWidth, game.DefaultHeight)
+	var srv *server.Server
+	if *mode == "mmorpg" {
+		srv = server.NewServerMode(s, game.DefaultWidth, game.DefaultHeight, game.ModeMMORPG)
+	} else {
+		srv = server.NewServer(s, game.DefaultWidth, game.DefaultHeight)
+	}
 	if err := srv.Listen(*addr); err != nil {
 		fmt.Fprintln(os.Stderr, "Erreur listen:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("☕ Serveur Donjon Caféiné — écoute sur %s (seed=%d)\n", srv.Addr(), s)
+	fmt.Printf("☕ Serveur Donjon Caféiné — écoute sur %s (seed=%d, mode=%s)\n", srv.Addr(), s, *mode)
 	fmt.Println("   Connecte-toi avec : donjon-cafeine --connect", srv.Addr())
 	if err := srv.Serve(); err != nil {
 		fmt.Fprintln(os.Stderr, "Erreur serve:", err)

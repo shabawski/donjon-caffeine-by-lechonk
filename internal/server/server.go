@@ -42,9 +42,8 @@ const writeTimeout = 10 * time.Second
 type Server struct {
 	state   *game.State
 	ln      net.Listener
-	mu      sync.Mutex           // protège state, players, fovs, clients
+	mu      sync.Mutex           // protège state, players, clients
 	players map[int]*game.Player // playerID → joueur
-	fovs    map[int]*game.FOV    // playerID → FOV personnel
 	clients map[int]*clientConn  // playerID → connexion (outbox + writeLoop)
 	nextID  int                  // prochain ID de joueur
 }
@@ -110,10 +109,20 @@ func (cc *clientConn) close() {
 
 // NewServer crée un serveur avec une nouvelle partie (seed, dimensions).
 func NewServer(seed int64, width, height int) *Server {
+	return NewServerMode(seed, width, height, game.ModeCoop)
+}
+
+// NewServerMode crée un serveur avec le mode de jeu donné (COOP ou MMORPG).
+func NewServerMode(seed int64, width, height int, mode game.GameMode) *Server {
+	var st *game.State
+	if mode == game.ModeMMORPG {
+		st = game.NewStateMMORPG(seed, width, height)
+	} else {
+		st = game.NewStateSized(seed, width, height)
+	}
 	return &Server{
-		state:   game.NewStateSized(seed, width, height),
+		state:   st,
 		players: make(map[int]*game.Player),
-		fovs:    make(map[int]*game.FOV),
 		clients: make(map[int]*clientConn),
 	}
 }
@@ -166,11 +175,19 @@ func (s *Server) handleConn(conn net.Conn) {
 	s.nextID++
 	p := s.spawnPlayerLocked(id)
 	s.players[id] = p
-	s.fovs[id] = game.NewFOV(s.state.World.Width * s.state.World.Height)
 	s.clients[id] = cc
-	game.ComputeFOV(s.state.World, s.fovs[id], p.X, p.Y, game.PlayerViewRange)
-	snap := s.state.SnapshotForPlayer(p, s.fovs[id], id)
-	welcome := encodeWelcomeMessage(s.state.Seed, s.state.World.Width, s.state.World.Height, id)
+	// FOV initial créé par spawnPlayerLocked sur la map racine.
+	rootMap := s.state.Maps.Get(p.MapID)
+	var width, height int
+	if rootMap != nil {
+		width, height = rootMap.World.Width, rootMap.World.Height
+	}
+	var fov *game.FOV
+	if rootMap != nil {
+		fov = rootMap.FOVFor(id)
+	}
+	snap := s.state.SnapshotForPlayer(p, fov, id)
+	welcome := encodeWelcomeMessage(s.state.Seed, width, height, id)
 	snapData := encodeSnapshotMessage(snap)
 	s.mu.Unlock()
 
@@ -199,8 +216,10 @@ func (s *Server) handleConn(conn net.Conn) {
 
 		// Appliquer l'input sous mutex, préparer le broadcast.
 		s.mu.Lock()
+		// Swap : le joueur courant devient celui de ce client.
 		s.state.Player = *s.players[id]
-		s.state.Others = s.otherPlayersLocked(id)
+		// Others = joueurs sur la MÊME map (les monstres ne voient que la map courante).
+		s.state.Others = s.otherPlayersOnMapLocked(id)
 		s.applyInput(in)
 		*s.players[id] = s.state.Player
 		s.recomputeFOVsLocked()
@@ -233,7 +252,6 @@ func (s *Server) removeClient(id int) {
 		delete(s.clients, id)
 	}
 	delete(s.players, id)
-	delete(s.fovs, id)
 }
 
 // disconnectClient ferme un client (outbox plein = trop lent) et le retire.
@@ -244,69 +262,113 @@ func (s *Server) disconnectClient(cc *clientConn) {
 			cc.close()
 			delete(s.clients, id)
 			delete(s.players, id)
-			delete(s.fovs, id)
 			break
 		}
 	}
 	s.mu.Unlock()
 }
 
-// spawnPlayerLocked crée un nouveau joueur sur une case libre de l'étage.
-// Le RNG est dérivé (seed + depth + id) pour un spawn déterministe par joueur.
+// spawnPlayerLocked crée un nouveau joueur sur la map racine (étage 1 en COOP).
+// Le RNG est dérivé (seed + mapID + id) pour un spawn déterministe par joueur.
 func (s *Server) spawnPlayerLocked(id int) *game.Player {
-	rng := game.NewRNG(s.state.Seed*1000 + int64(s.state.World.Depth)*100 + int64(id))
-	x, y, ok := s.state.World.RandomFloor(rng)
-	if !ok || s.state.Occupied(x, y) {
-		for yy := 1; yy < s.state.World.Height-1 && !ok; yy++ {
-			for xx := 1; xx < s.state.World.Width-1 && !ok; xx++ {
-				if s.state.World.IsWalkable(xx, yy) && !s.state.Occupied(xx, yy) {
-					x, y, ok = xx, yy, true
+	// Map racine (étage 1 en COOP, overworld en MMORPG). Fallback : première map.
+	rootMap := s.state.Maps.Root()
+	if rootMap == nil {
+		for _, m := range s.state.Maps.All() {
+			rootMap = m
+			break
+		}
+	}
+	mapID := 0
+	var x, y int
+	if rootMap != nil {
+		mapID = rootMap.ID
+		rng := game.NewRNG(s.state.Seed*1000 + int64(rootMap.ID)*100 + int64(id))
+		x, y, _ = rootMap.World.RandomFloor(rng)
+		// Cherche une case libre si occupée.
+		if !rootMap.World.IsWalkable(x, y) || s.playerOccupiedOnMapLocked(rootMap.ID, x, y, id) {
+			for yy := 1; yy < rootMap.World.Height-1; yy++ {
+				for xx := 1; xx < rootMap.World.Width-1; xx++ {
+					if rootMap.World.IsWalkable(xx, yy) && !s.playerOccupiedOnMapLocked(rootMap.ID, xx, yy, id) {
+						x, y = xx, yy
+						break
+					}
 				}
 			}
 		}
 	}
-	if !ok {
+	if x == 0 && y == 0 {
 		x, y = 1, 1
 	}
 	p := &game.Player{
 		Entity:  *game.NewPlayer(x, y),
 		ID:      id,
+		MapID:   mapID,
 		Level:   1,
 		MaxMana: game.StartMaxMana,
 		Mana:    game.StartMaxMana,
 	}
+	// FOV initial sur la map racine.
+	if rootMap != nil {
+		rootMap.SetFOV(id, game.NewFOV(rootMap.World.Width*rootMap.World.Height))
+		game.ComputeFOV(rootMap.World, rootMap.FOVFor(id), x, y, game.PlayerViewRange)
+	}
 	return p
 }
 
-// otherPlayersLocked retourne les joueurs autres que celui donné.
-func (s *Server) otherPlayersLocked(id int) []*game.Player {
-	others := make([]*game.Player, 0, len(s.players)-1)
-	for pid, p := range s.players {
-		if pid != id {
-			others = append(others, p)
+// playerOccupiedOnMapLocked indique si un autre joueur occupe (x, y) sur la map.
+func (s *Server) playerOccupiedOnMapLocked(mapID, x, y, exceptID int) bool {
+	for pid, op := range s.players {
+		if pid != exceptID && op.MapID == mapID && op.X == x && op.Y == y {
+			return true
+		}
+	}
+	return false
+}
+
+// otherPlayersOnMapLocked retourne les autres joueurs sur la MÊME map que le
+// joueur donné (pour state.Others pendant le tour d'un client).
+func (s *Server) otherPlayersOnMapLocked(id int) []*game.Player {
+	p := s.players[id]
+	if p == nil {
+		return nil
+	}
+	var others []*game.Player
+	for pid, op := range s.players {
+		if pid != id && op.MapID == p.MapID {
+			others = append(others, op)
 		}
 	}
 	return others
 }
 
-// recomputeFOVsLocked recalcule le FOV de chaque joueur connecté.
+// recomputeFOVsLocked recalcule le FOV de chaque joueur dans SA map.
 func (s *Server) recomputeFOVsLocked() {
 	for id, p := range s.players {
-		if s.fovs[id] == nil {
-			s.fovs[id] = game.NewFOV(s.state.World.Width * s.state.World.Height)
+		m := s.state.Maps.Get(p.MapID)
+		if m == nil {
+			continue
 		}
-		game.ComputeFOV(s.state.World, s.fovs[id], p.X, p.Y, game.PlayerViewRange)
+		if m.FOVFor(id) == nil {
+			m.SetFOV(id, game.NewFOV(m.World.Width*m.World.Height))
+		}
+		game.ComputeFOV(m.World, m.FOVFor(id), p.X, p.Y, game.PlayerViewRange)
 	}
 }
 
 // buildBroadcastLocked construit les messages de snapshot pour chaque client
-// connecté (sous mutex). L'envoi effectif se fait hors mutex via les outbox.
+// connecté (sous mutex). Chaque joueur reçoit le snapshot de SA map avec SON
+// FOV. L'envoi effectif se fait hors mutex via les outbox.
 func (s *Server) buildBroadcastLocked() []pendingSend {
 	out := make([]pendingSend, 0, len(s.players))
 	for id, p := range s.players {
-		fov := s.fovs[id]
+		m := s.state.Maps.Get(p.MapID)
+		if m == nil {
+			continue
+		}
+		fov := m.FOVFor(id)
 		cc, ok := s.clients[id]
-		if p == nil || fov == nil || !ok {
+		if !ok {
 			continue
 		}
 		snap := s.state.SnapshotForPlayer(p, fov, id)
@@ -339,6 +401,10 @@ func (s *Server) applyInput(in netproto.InputPayload) {
 		st.BuyItem(in.Index)
 	case netproto.InputSell:
 		st.SellItem(in.Index)
+	case netproto.InputEnterBuilding:
+		st.EnterBuilding()
+	case netproto.InputExitBuilding:
+		st.ExitBuilding()
 	}
 }
 

@@ -8,6 +8,7 @@ const (
 	TileFloor
 	TileStairs
 	TileStairsUp
+	TileBuilding // bâtiment/portail (overworld MMORPG) — infranchissable, interagissable avec 'g'
 )
 
 // Glyph renvoie le caractère représentant la tuile.
@@ -19,6 +20,8 @@ func (t Tile) Glyph() rune {
 		return '>'
 	case TileStairsUp:
 		return '<'
+	case TileBuilding:
+		return '⌂'
 	default:
 		return '#'
 	}
@@ -59,8 +62,7 @@ type World struct {
 	HasStairs     bool // escalier vers le bas (false au dernier étage)
 	StairsUpX     int
 	StairsUpY     int
-	HasStairsUp   bool      // escalier vers le haut (false au premier étage)
-	Merchant      *Merchant // PNJ marchand (nil si pas de marchand sur cet étage)
+	HasStairsUp   bool // escalier vers le haut (false au premier étage)
 }
 
 // InBounds indique si (x, y) est dans la carte.
@@ -84,6 +86,7 @@ func (w *World) Set(x, y int, t Tile) {
 }
 
 // IsWalkable indique si une case est franchissable (sol ou escalier).
+// TileBuilding n'est PAS franchissable : c'est un portail, on interagit avec 'g'.
 func (w *World) IsWalkable(x, y int) bool {
 	switch w.At(x, y) {
 	case TileFloor, TileStairs, TileStairsUp:

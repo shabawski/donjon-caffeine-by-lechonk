@@ -60,13 +60,18 @@ func BFSNextStep(w *World, blocked func(x, y int) bool, fromX, fromY, toX, toY i
 	return cx, cy, true
 }
 
-// EnemyTurn fait agir un monstre pour ce tour : patrouille si aucun joueur
-// n'est détecté, fuite si le monstre est faible et blessé, chasse (BFS) sinon,
-// attaque au corps à corps si adjacent.
-// Le monstre est identifié par son EntityID dans le registre SOA s.Entities.
-// En multijoueur, le monstre cible le joueur le plus proche détecté (focus).
+// EnemyTurn fait agir un monstre pour ce tour (sur sa map courante) :
+// patrouille si aucun joueur de la map n'est détecté, fuite si le monstre
+// est faible et blessé, chasse (BFS) sinon, attaque au corps à corps si adjacent.
+// Le monstre est identifié par son EntityID dans le registre SOA de sa map.
+// En multijoueur, le monstre cible le joueur le plus proche détecté SUR LA
+// MÊME MAP (focus) — les joueurs sur d'autres maps ne sont pas visibles.
 func (s *State) EnemyTurn(id EntityID) {
-	e := s.Entities
+	m := s.curMap()
+	if m == nil {
+		return
+	}
+	e := m.Entities
 	if !e.IsAlive(id) {
 		return
 	}
@@ -85,7 +90,7 @@ func (s *State) EnemyTurn(id EntityID) {
 		return
 	}
 	if dist == 1 {
-		// Attaque le joueur focus (le plus proche détecté).
+		// Attaque le joueur focus (le plus proche détecté sur la même map).
 		target := s.playerAt(tx, ty)
 		if target == nil {
 			return
@@ -109,8 +114,8 @@ func (s *State) EnemyTurn(id EntityID) {
 		}
 		return
 	}
-	blocked := func(x, y int) bool { return s.OccupiedByEnemy(x, y) != InvalidEntity }
-	nx, ny, ok := BFSNextStep(s.World, blocked, e.X[i], e.Y[i], tx, ty)
+	blocked := func(x, y int) bool { return m.Entities.EnemyAt(x, y) != InvalidEntity }
+	nx, ny, ok := BFSNextStep(m.World, blocked, e.X[i], e.Y[i], tx, ty)
 	if !ok {
 		s.moveEnemyRandom(id)
 		return
@@ -119,15 +124,19 @@ func (s *State) EnemyTurn(id EntityID) {
 }
 
 // focusPlayer retourne la position du joueur le plus proche détecté par le
-// monstre (focus). Détection : portée Chebyshev + ligne de vue dégagée
-// (le boss flaire à travers les murs). En solo, c'est toujours le joueur local.
+// monstre (focus) SUR LA MÊME MAP. Détection : portée Chebyshev + ligne de
+// vue dégagée (le boss flaire à travers les murs). En solo, c'est le joueur local.
 func (s *State) focusPlayer(id EntityID) (int, int, bool) {
-	e := s.Entities
+	m := s.curMap()
+	if m == nil {
+		return 0, 0, false
+	}
+	e := m.Entities
 	i := int(id)
 	bestDist := 1 << 30
 	bx, by := 0, 0
 	found := false
-	for _, p := range s.AllPlayers() {
+	for _, p := range s.playersOnCurMap() {
 		dist := chebDist(e.X[i], e.Y[i], p.X, p.Y)
 		if dist > e.DetectRange[i] {
 			continue
@@ -153,7 +162,11 @@ func (s *State) detectsPlayer(id EntityID) bool {
 
 // moveEnemyRandom déplace le monstre vers une case voisine franchissable au hasard.
 func (s *State) moveEnemyRandom(id EntityID) {
-	e := s.Entities
+	m := s.curMap()
+	if m == nil {
+		return
+	}
+	e := m.Entities
 	i := int(id)
 	dirs := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 	s.RNG.Shuffle(4, func(a, b int) { dirs[a], dirs[b] = dirs[b], dirs[a] })
@@ -167,7 +180,11 @@ func (s *State) moveEnemyRandom(id EntityID) {
 
 // moveEnemyAway déplace le monstre vers la case voisine qui l'éloigne le plus du joueur.
 func (s *State) moveEnemyAway(id EntityID, px, py int) {
-	e := s.Entities
+	m := s.curMap()
+	if m == nil {
+		return
+	}
+	e := m.Entities
 	i := int(id)
 	type cand struct{ x, y, score int }
 	best := cand{score: -1}
@@ -191,9 +208,13 @@ func (s *State) moveEnemyAway(id EntityID, px, py int) {
 }
 
 func (s *State) moveEnemyTo(id EntityID, x, y int) {
+	m := s.curMap()
+	if m == nil {
+		return
+	}
 	i := int(id)
-	s.Entities.X[i] = x
-	s.Entities.Y[i] = y
+	m.Entities.X[i] = x
+	m.Entities.Y[i] = y
 }
 
 // chebDist est la distance de Chebyshev (max des distances sur chaque axe).

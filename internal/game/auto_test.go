@@ -17,8 +17,8 @@ func TestAutoPlayTerminatesWithoutPanic(t *testing.T) {
 			s.AutoAction()
 		}
 		stats[s.Phase]++
-		if s.World.Depth > maxDepthReached {
-			maxDepthReached = s.World.Depth
+		if s.curMap().World.Depth > maxDepthReached {
+			maxDepthReached = s.curMap().World.Depth
 		}
 		if s.Won {
 			victories++
@@ -54,16 +54,16 @@ func TestAutoPlayDeterministic(t *testing.T) {
 // bout : descente jusqu'au dernier étage, puis mort du boss.
 func TestVictoryPathEndToEnd(t *testing.T) {
 	s := NewState(42)
-	for s.World.Depth < MaxDepth {
-		s.Player.X, s.Player.Y = s.World.StairsX, s.World.StairsY
+	for s.curMap().World.Depth < MaxDepth {
+		s.Player.X, s.Player.Y = s.curMap().World.StairsX, s.curMap().World.StairsY
 		if !s.Descend() {
-			t.Fatalf("impossible de descendre à l'étage %d", s.World.Depth)
+			t.Fatalf("impossible de descendre à l'étage %d", s.curMap().World.Depth)
 		}
 	}
-	if s.World.Depth != MaxDepth {
-		t.Fatalf("dernier étage attendu %d, got %d", MaxDepth, s.World.Depth)
+	if s.curMap().World.Depth != MaxDepth {
+		t.Fatalf("dernier étage attendu %d, got %d", MaxDepth, s.curMap().World.Depth)
 	}
-	if s.World.HasStairs {
+	if s.curMap().World.HasStairs {
 		t.Fatal("pas d'escalier au dernier étage")
 	}
 	boss := s.boss()
@@ -72,7 +72,7 @@ func TestVictoryPathEndToEnd(t *testing.T) {
 	}
 	// Le joueur se téléporte sur le boss et attaque (test de transition, pas de déplacement).
 	s.Player.Attack = 1000
-	s.Player.X, s.Player.Y = s.Entities.X[int(boss)], s.Entities.Y[int(boss)]
+	s.Player.X, s.Player.Y = s.curMap().Entities.X[int(boss)], s.curMap().Entities.Y[int(boss)]
 	s.MovePlayer(0, 0)
 	if s.Phase != PhaseVictory {
 		t.Fatalf("phase attendue PhaseVictory, got %v", s.Phase)
@@ -95,12 +95,12 @@ func TestGameOverPath(t *testing.T) {
 	s.Player.MaxHP = 1
 	// Entoure le joueur de gobelins trop forts.
 	for _, d := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
-		if s.World.IsWalkable(s.Player.X+d[0], s.Player.Y+d[1]) {
+		if s.curMap().World.IsWalkable(s.Player.X+d[0], s.Player.Y+d[1]) {
 			g := s.addEnemy(KindGoblin, s.Player.X+d[0], s.Player.Y+d[1])
-			s.Entities.Attack[int(g)] = 100
+			s.curMap().Entities.Attack[int(g)] = 100
 		}
 	}
-	ComputeFOV(s.World, s.FOV, s.Player.X, s.Player.Y, PlayerViewRange)
+	ComputeFOV(s.curMap().World, s.curFOV(), s.Player.X, s.Player.Y, PlayerViewRange)
 	s.PlayerWait()
 	if s.Phase != PhaseGameOver {
 		t.Fatalf("phase attendue PhaseGameOver, got %v", s.Phase)
@@ -117,30 +117,30 @@ func TestGameOverPath(t *testing.T) {
 // combat, ramassage, descente — sur un étage généré procéduralement.
 func TestFullFloorCycle(t *testing.T) {
 	s := NewState(7)
-	for s.World.Depth < 4 && s.Phase == PhasePlaying {
+	for s.curMap().World.Depth < 4 && s.Phase == PhasePlaying {
 		// Tue tous les monstres de l'étage (god mode partiel).
-		ids := make([]EntityID, 0, s.Entities.Len())
-		s.Entities.EachAlive(func(id EntityID) { ids = append(ids, id) })
+		ids := make([]EntityID, 0, s.curMap().Entities.Len())
+		s.curMap().Entities.EachAlive(func(id EntityID) { ids = append(ids, id) })
 		for _, id := range ids {
-			s.Entities.HP[int(id)] = 1
+			s.curMap().Entities.HP[int(id)] = 1
 		}
 		for _, id := range ids {
-			if !s.Entities.IsAlive(id) {
+			if !s.curMap().Entities.IsAlive(id) {
 				continue
 			}
 			// Téléporte le joueur à côté et attaque.
 			s.Player.Attack = 1000
-			s.Player.X, s.Player.Y = s.Entities.X[int(id)], s.Entities.Y[int(id)]
+			s.Player.X, s.Player.Y = s.curMap().Entities.X[int(id)], s.curMap().Entities.Y[int(id)]
 			s.MovePlayer(0, 0)
 		}
 		// Descend.
-		s.Player.X, s.Player.Y = s.World.StairsX, s.World.StairsY
+		s.Player.X, s.Player.Y = s.curMap().World.StairsX, s.curMap().World.StairsY
 		if !s.Descend() {
-			t.Fatalf("descente impossible à l'étage %d", s.World.Depth)
+			t.Fatalf("descente impossible à l'étage %d", s.curMap().World.Depth)
 		}
 	}
-	if s.World.Depth != 4 {
-		t.Fatalf("étage 4 attendu, got %d (phase=%v)", s.World.Depth, s.Phase)
+	if s.curMap().World.Depth != 4 {
+		t.Fatalf("étage 4 attendu, got %d (phase=%v)", s.curMap().World.Depth, s.Phase)
 	}
 	if s.Player.Kills == 0 {
 		t.Fatal("des monstres doivent avoir été tués")

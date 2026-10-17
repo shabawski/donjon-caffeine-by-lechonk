@@ -10,19 +10,19 @@ func TestNewState(t *testing.T) {
 	if s.Phase != PhasePlaying {
 		t.Fatalf("phase initiale %v, attendu PhasePlaying", s.Phase)
 	}
-	if s.World == nil || s.World.Depth != 1 {
+	if s.curMap().World == nil || s.curMap().World.Depth != 1 {
 		t.Fatal("étage 1 attendu")
 	}
-	if !s.World.HasStairs {
+	if !s.curMap().World.HasStairs {
 		t.Fatal("l'étage 1 doit avoir un escalier")
 	}
-	if !s.World.IsWalkable(s.Player.X, s.Player.Y) {
+	if !s.curMap().World.IsWalkable(s.Player.X, s.Player.Y) {
 		t.Fatal("le joueur doit spawner sur une case franchissable")
 	}
-	if !s.FOV.Visible[s.Player.Y*s.World.Width+s.Player.X] {
+	if !s.curFOV().Visible[s.Player.Y*s.curMap().World.Width+s.Player.X] {
 		t.Fatal("le FOV doit être calculé au spawn")
 	}
-	if s.Entities.Len() < 1 {
+	if s.curMap().Entities.Len() < 1 {
 		t.Fatal("des monstres doivent spawner à l'étage 1")
 	}
 	if len(s.Log) < 2 {
@@ -62,13 +62,13 @@ func TestMovePlayerOnFloor(t *testing.T) {
 func TestMovePlayerAttacksEnemy(t *testing.T) {
 	s := newTestState(1, 10, 10)
 	rat := s.addEnemy(KindRat, 2, 1)
-	s.Entities.HP[int(rat)] = 1
+	s.curMap().Entities.HP[int(rat)] = 1
 	s.Player.Attack = 100
-	xpValue := s.Entities.XPValue[int(rat)] // capturé avant la mort (Compact invalide l'index)
+	xpValue := s.curMap().Entities.XPValue[int(rat)] // capturé avant la mort (Compact invalide l'index)
 	if !s.MovePlayer(1, 0) {
 		t.Fatal("attaquer un monstre consomme un tour")
 	}
-	if s.Entities.IsAlive(rat) {
+	if s.curMap().Entities.IsAlive(rat) {
 		t.Fatal("le rat avec 1 PV doit mourir")
 	}
 	if s.Player.Kills != 1 {
@@ -80,8 +80,8 @@ func TestMovePlayerAttacksEnemy(t *testing.T) {
 		t.Fatalf("XP attendu entre 4 et 6 (variance ±20%% de 5), got %d", s.Player.XP)
 	}
 	// Le monstre mort est retiré au tour suivant des monstres.
-	if s.Entities.Len() != 0 {
-		t.Fatalf("le monstre mort doit être retiré, %d restant(s)", s.Entities.Len())
+	if s.curMap().Entities.Len() != 0 {
+		t.Fatalf("le monstre mort doit être retiré, %d restant(s)", s.curMap().Entities.Len())
 	}
 }
 
@@ -96,7 +96,7 @@ func TestMovePlayerBlockedWhenNotPlaying(t *testing.T) {
 func TestPickupPotionGoesToInventory(t *testing.T) {
 	s := newTestState(1, 10, 10)
 	s.Player.HP = 10
-	s.Items = []*Item{{Kind: ItemPotionHP, Name: "potion de soin", Glyph: '!', X: 2, Y: 1, Power: 10}}
+	s.curMap().Items = []*Item{{Kind: ItemPotionHP, Name: "potion de soin", Glyph: '!', X: 2, Y: 1, Power: 10}}
 	s.MovePlayer(1, 0)
 	// La potion va dans l'inventaire, les PV ne sont pas modifiés.
 	if s.Player.HP != 10 {
@@ -105,14 +105,14 @@ func TestPickupPotionGoesToInventory(t *testing.T) {
 	if len(s.Player.Inventory) != 1 || s.Player.Inventory[0].Kind != ItemPotionHP {
 		t.Fatalf("potion attendue dans l'inventaire, got %v", s.Player.Inventory)
 	}
-	if len(s.Items) != 0 {
+	if len(s.curMap().Items) != 0 {
 		t.Fatal("la potion doit être retirée de la carte")
 	}
 }
 
 func TestPickupWeaponGoesToInventory(t *testing.T) {
 	s := newTestState(1, 10, 10)
-	s.Items = []*Item{{Kind: ItemWeapon, Name: "épée courte", Glyph: '/', X: 2, Y: 1, Power: 3}}
+	s.curMap().Items = []*Item{{Kind: ItemWeapon, Name: "épée courte", Glyph: '/', X: 2, Y: 1, Power: 3}}
 	s.MovePlayer(1, 0)
 	// L'arme va dans l'inventaire, pas d'auto-équip.
 	if s.Player.WeaponBonus != 0 || s.Player.WeaponName != "" {
@@ -125,7 +125,7 @@ func TestPickupWeaponGoesToInventory(t *testing.T) {
 
 func TestPickupArmorGoesToInventory(t *testing.T) {
 	s := newTestState(1, 10, 10)
-	s.Items = []*Item{{Kind: ItemArmor, Name: "cotte de mailles", Glyph: '[', X: 2, Y: 1, Power: 2}}
+	s.curMap().Items = []*Item{{Kind: ItemArmor, Name: "cotte de mailles", Glyph: '[', X: 2, Y: 1, Power: 2}}
 	s.MovePlayer(1, 0)
 	if s.Player.ArmorBonus != 0 || s.Player.ArmorName != "" {
 		t.Fatalf("pas d'auto-équip attendu, got %q (+%d)", s.Player.ArmorName, s.Player.ArmorBonus)
@@ -137,7 +137,7 @@ func TestPickupArmorGoesToInventory(t *testing.T) {
 
 func TestPickupGold(t *testing.T) {
 	s := newTestState(1, 10, 10)
-	s.Items = []*Item{{Kind: ItemGold, Name: "pièces d'or", Glyph: '$', X: 2, Y: 1, Power: 42}}
+	s.curMap().Items = []*Item{{Kind: ItemGold, Name: "pièces d'or", Glyph: '$', X: 2, Y: 1, Power: 42}}
 	s.MovePlayer(1, 0)
 	if s.Player.Gold != 42 {
 		t.Fatalf("or attendu 42, got %d", s.Player.Gold)
@@ -150,7 +150,7 @@ func TestCastFireballCostsManaAndDamagesArea(t *testing.T) {
 	s.Player.Mana = 20
 	s.addEnemy(KindRat, 8, 7)
 	s.addEnemy(KindRat, 7, 8)
-	ComputeFOV(s.World, s.FOV, 7, 7, PlayerViewRange)
+	ComputeFOV(s.curMap().World, s.curFOV(), 7, 7, PlayerViewRange)
 	if !s.CastFireball(0, 0) {
 		t.Fatal("la boule de feu doit être lancée")
 	}
@@ -162,8 +162,8 @@ func TestCastFireballCostsManaAndDamagesArea(t *testing.T) {
 	if s.Player.Kills != 2 {
 		t.Fatalf("kills attendus 2 (dégâts de zone), got %d", s.Player.Kills)
 	}
-	if s.Entities.Len() != 0 {
-		t.Fatalf("les monstres morts doivent être compactés, %d restant(s)", s.Entities.Len())
+	if s.curMap().Entities.Len() != 0 {
+		t.Fatalf("les monstres morts doivent être compactés, %d restant(s)", s.curMap().Entities.Len())
 	}
 	if s.Player.Turns != 1 {
 		t.Fatal("la boule de feu consomme un tour")
@@ -174,9 +174,9 @@ func TestCastFireballKillsAndGrantsXP(t *testing.T) {
 	s := newTestState(1, 15, 15)
 	s.Player.X, s.Player.Y = 7, 7
 	rat := s.addEnemy(KindRat, 8, 7) // 8 PV, fireball niveau 1 = 10 dégâts
-	ComputeFOV(s.World, s.FOV, 7, 7, PlayerViewRange)
+	ComputeFOV(s.curMap().World, s.curFOV(), 7, 7, PlayerViewRange)
 	s.CastFireball(0, 0)
-	if s.Entities.IsAlive(rat) {
+	if s.curMap().Entities.IsAlive(rat) {
 		t.Fatal("le rat doit mourir dans la boule de feu")
 	}
 	if s.Player.Kills != 1 {
@@ -191,7 +191,7 @@ func TestCastFireballNotEnoughMana(t *testing.T) {
 		t.Fatal("pas assez de mana: le sort doit échouer")
 	}
 	if s.Player.Mana != FireballCost-1 {
-		t.Fatal("le mana ne doit pas être débité en cas d'échec")
+		t.Fatalf("le mana ne doit pas être débité en cas d'échec")
 	}
 	if s.Player.Turns != 0 {
 		t.Fatal("un sort échoué ne consomme pas de tour")
@@ -211,9 +211,9 @@ func TestManaRegen(t *testing.T) {
 
 func TestDescendRequiresStairs(t *testing.T) {
 	s := newTestState(1, 10, 10)
-	s.World.HasStairs = true
-	s.World.StairsX, s.World.StairsY = 5, 5
-	s.World.Set(5, 5, TileStairs)
+	s.curMap().World.HasStairs = true
+	s.curMap().World.StairsX, s.curMap().World.StairsY = 5, 5
+	s.curMap().World.Set(5, 5, TileStairs)
 	if s.Descend() {
 		t.Fatal("descendre hors de l'escalier doit échouer")
 	}
@@ -221,14 +221,14 @@ func TestDescendRequiresStairs(t *testing.T) {
 	if !s.Descend() {
 		t.Fatal("descendre sur l'escalier doit réussir")
 	}
-	if s.World.Depth != 2 {
-		t.Fatalf("étage attendu 2, got %d", s.World.Depth)
+	if s.curMap().World.Depth != 2 {
+		t.Fatalf("étage attendu 2, got %d", s.curMap().World.Depth)
 	}
 }
 
 func TestDescendWithoutStairs(t *testing.T) {
 	s := newTestState(1, 10, 10)
-	s.World.HasStairs = false
+	s.curMap().World.HasStairs = false
 	if s.Descend() {
 		t.Fatal("pas d'escalier: descente impossible")
 	}
@@ -237,7 +237,7 @@ func TestDescendWithoutStairs(t *testing.T) {
 func TestVictoryOnBossKill(t *testing.T) {
 	s := newTestState(1, 10, 10)
 	boss := s.addEnemy(KindBoss, 2, 1)
-	s.Entities.HP[int(boss)] = 1
+	s.curMap().Entities.HP[int(boss)] = 1
 	s.Player.Attack = 100
 	s.MovePlayer(1, 0) // attaque le boss
 	if s.Phase != PhaseVictory {
@@ -256,8 +256,8 @@ func TestVictoryViaFireball(t *testing.T) {
 	s.Player.X, s.Player.Y = 7, 7
 	s.Player.Level = 10 // fireball = 8 + 20 = 28 dégâts
 	boss := s.addEnemy(KindBoss, 8, 7)
-	s.Entities.HP[int(boss)] = 10
-	ComputeFOV(s.World, s.FOV, 7, 7, PlayerViewRange)
+	s.curMap().Entities.HP[int(boss)] = 10
+	ComputeFOV(s.curMap().World, s.curFOV(), 7, 7, PlayerViewRange)
 	s.CastFireball(0, 0)
 	if s.Phase != PhaseVictory {
 		t.Fatalf("tuer le boss avec une boule de feu doit gagner, phase=%v", s.Phase)
@@ -269,8 +269,8 @@ func TestPlayerDeath(t *testing.T) {
 	s.Player.X, s.Player.Y = 5, 5
 	s.Player.HP = 1
 	gob := s.addEnemy(KindGoblin, 6, 5)
-	s.Entities.Attack[int(gob)] = 50
-	ComputeFOV(s.World, s.FOV, 5, 5, PlayerViewRange)
+	s.curMap().Entities.Attack[int(gob)] = 50
+	ComputeFOV(s.curMap().World, s.curFOV(), 5, 5, PlayerViewRange)
 	s.PlayerWait() // le gobelin attaque et tue le joueur
 	if s.Phase != PhaseGameOver {
 		t.Fatalf("phase attendue PhaseGameOver, got %v", s.Phase)
@@ -302,7 +302,7 @@ func TestScoreCalculation(t *testing.T) {
 	s.Player.Gold = 10
 	s.Player.Kills = 5
 	s.Player.Level = 3
-	s.World.Depth = 2
+	s.curMap().Depth = 2 // Score() lit la profondeur de la map courante
 	// 10*2 + 5*10 + 3*25 + 2*50 = 245
 	if got := s.Score(); got != 245 {
 		t.Fatalf("score attendu 245, got %d", got)
@@ -346,15 +346,15 @@ func TestOccupiedAndItemAt(t *testing.T) {
 	if !s.Occupied(5, 5) || s.OccupiedByEnemy(5, 5) != rat {
 		t.Fatal("la case du monstre est occupée")
 	}
-	s.Entities.HP[int(rat)] = 0
-	s.Entities.Alive[int(rat)] = false // simule un monstre mort non encore compacté
+	s.curMap().Entities.HP[int(rat)] = 0
+	s.curMap().Entities.Alive[int(rat)] = false // simule un monstre mort non encore compacté
 	if s.Occupied(5, 5) {
 		t.Fatal("un monstre mort n'occupe plus sa case")
 	}
 	if s.ItemAt(1, 1) != nil {
 		t.Fatal("pas d'objet en (1,1)")
 	}
-	s.Items = []*Item{{Kind: ItemGold, X: 2, Y: 2}}
+	s.curMap().Items = []*Item{{Kind: ItemGold, X: 2, Y: 2}}
 	if s.ItemAt(2, 2) == nil {
 		t.Fatal("objet attendu en (2,2)")
 	}

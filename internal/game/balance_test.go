@@ -116,24 +116,24 @@ func TestRollXPDeterministic(t *testing.T) {
 // TestAscendRequiresStairsUp vérifie que Ascend échoue sans escalier montant.
 func TestAscendRequiresStairsUp(t *testing.T) {
 	s := newTestState(1, 10, 10)
-	s.World.HasStairsUp = false
+	s.curMap().World.HasStairsUp = false
 	if s.Ascend() {
 		t.Fatal("remonter sans escalier montant doit échouer")
 	}
-	s.World.HasStairsUp = true
-	s.World.StairsUpX, s.World.StairsUpY = 5, 5
-	s.World.Set(5, 5, TileStairsUp)
+	s.curMap().World.HasStairsUp = true
+	s.curMap().World.StairsUpX, s.curMap().World.StairsUpY = 5, 5
+	s.curMap().World.Set(5, 5, TileStairsUp)
 	if s.Ascend() {
 		t.Fatal("remonter hors de l'escalier montant doit échouer")
 	}
 	s.Player.X, s.Player.Y = 5, 5
 	// newTestState est à l'étage 1 : pas d'escalier montant possible, on force l'étage 2
-	s.World.Depth = 2
+	s.curMap().Depth = 2
 	if !s.Ascend() {
 		t.Fatal("remonter sur l'escalier montant doit réussir")
 	}
-	if s.World.Depth != 1 {
-		t.Fatalf("étage attendu 1 après Ascend, got %d", s.World.Depth)
+	if s.curMap().World.Depth != 1 {
+		t.Fatalf("étage attendu 1 après Ascend, got %d", s.curMap().World.Depth)
 	}
 }
 
@@ -141,7 +141,7 @@ func TestAscendRequiresStairsUp(t *testing.T) {
 func TestAscendAtFirstFloorFails(t *testing.T) {
 	s := NewState(42)
 	// Étage 1 : pas d'escalier montant généré
-	if s.World.HasStairsUp {
+	if s.curMap().World.HasStairsUp {
 		t.Fatal("l'étage 1 ne doit pas avoir d'escalier montant")
 	}
 	if s.Ascend() {
@@ -171,46 +171,47 @@ func TestGenerateWorldHasStairsUp(t *testing.T) {
 	}
 }
 
-// TestFloorStableAcrossAscendDescend vérifie que le RNG dérivé par étage rend
-// les étages stables : descendre à l'étage 2, remonter, redescendre → même carte.
+// TestFloorStableAcrossAscendDescend vérifie que les maps persistent dans le
+// registre : descendre à l'étage 2, remonter, redescendre → même instance de map
+// (mêmes tuiles), sans régénération.
 func TestFloorStableAcrossAscendDescend(t *testing.T) {
 	s := NewState(42)
 	// Descend à l'étage 2
-	s.Player.X, s.Player.Y = s.World.StairsX, s.World.StairsY
+	s.Player.X, s.Player.Y = s.curMap().World.StairsX, s.curMap().World.StairsY
 	if !s.Descend() {
 		t.Fatal("descente étage 2 impossible")
 	}
 	// Capture les tuiles de l'étage 2
-	tilesFloor2 := make([]Tile, len(s.World.Tiles))
-	copy(tilesFloor2, s.World.Tiles)
-	stairs2 := [2]int{s.World.StairsX, s.World.StairsY}
-	stairsUp2 := [2]int{s.World.StairsUpX, s.World.StairsUpY}
-	// Remonte à l'étage 1
-	s.Player.X, s.Player.Y = s.World.StairsUpX, s.World.StairsUpY
+	tilesFloor2 := make([]Tile, len(s.curMap().World.Tiles))
+	copy(tilesFloor2, s.curMap().World.Tiles)
+	stairs2 := [2]int{s.curMap().World.StairsX, s.curMap().World.StairsY}
+	stairsUp2 := [2]int{s.curMap().World.StairsUpX, s.curMap().World.StairsUpY}
+	// Remonte à l'étage 1 (map parente, persistée)
+	s.Player.X, s.Player.Y = s.curMap().World.StairsUpX, s.curMap().World.StairsUpY
 	if !s.Ascend() {
 		t.Fatal("remontée étage 1 impossible")
 	}
-	if s.World.Depth != 1 {
-		t.Fatalf("étage attendu 1, got %d", s.World.Depth)
+	if s.curMap().World.Depth != 1 {
+		t.Fatalf("étage attendu 1, got %d", s.curMap().World.Depth)
 	}
-	// Redescend à l'étage 2
-	s.Player.X, s.Player.Y = s.World.StairsX, s.World.StairsY
+	// Redescend à l'étage 2 (même instance de map)
+	s.Player.X, s.Player.Y = s.curMap().World.StairsX, s.curMap().World.StairsY
 	if !s.Descend() {
 		t.Fatal("redescente étage 2 impossible")
 	}
-	if s.World.Depth != 2 {
-		t.Fatalf("étage attendu 2, got %d", s.World.Depth)
+	if s.curMap().World.Depth != 2 {
+		t.Fatalf("étage attendu 2, got %d", s.curMap().World.Depth)
 	}
 	// Même carte ?
 	for i := range tilesFloor2 {
-		if s.World.Tiles[i] != tilesFloor2[i] {
-			t.Fatalf("tuile %d diverge après remontée/redescente: %v vs %v", i, s.World.Tiles[i], tilesFloor2[i])
+		if s.curMap().World.Tiles[i] != tilesFloor2[i] {
+			t.Fatalf("tuile %d diverge après remontée/redescente: %v vs %v", i, s.curMap().World.Tiles[i], tilesFloor2[i])
 		}
 	}
-	if s.World.StairsX != stairs2[0] || s.World.StairsY != stairs2[1] {
+	if s.curMap().World.StairsX != stairs2[0] || s.curMap().World.StairsY != stairs2[1] {
 		t.Fatal("position escalier étage 2 diverge")
 	}
-	if s.World.StairsUpX != stairsUp2[0] || s.World.StairsUpY != stairsUp2[1] {
+	if s.curMap().World.StairsUpX != stairsUp2[0] || s.curMap().World.StairsUpY != stairsUp2[1] {
 		t.Fatal("position escalier montant étage 2 diverge")
 	}
 }

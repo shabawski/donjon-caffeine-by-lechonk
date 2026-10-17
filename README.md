@@ -7,10 +7,23 @@ Un **roguelike dungeon-crawler en terminal**, écrit en Go pur (BubbleTea + Lipg
 > et des squelettes, améliore ton héros… et affronte le boss final pour récupérer
 > le café. ☕
 
+## Modes de jeu
+
+Deux modes, choisis au menu (solo) ou par le serveur (multi) :
+
+- **COOP (donjon)** — le mode classique : 10 étages, escalier bidirectionnel,
+  le boss du dernier étage a volé le café. **Victoire = tuer le boss.**
+- **MMORPG (monde ouvert)** — un **overworld** (plaine ouverte, sans escaliers)
+  parsemé de **bâtiments ⌂** (portails). Le bâtiment « Donjon » mène à une
+  **instance de donjon COOP** (10 étages + boss), créée à la demande et
+  réutilisée. Architecture extensible : biomes, PNJ, quêtes, autres portails.
+
+En multijoueur, le mode est choisi au lancement du serveur (`--mode mmorpg`).
+
 ## Lancer le jeu
 
 ```sh
-go run .                 # partie solo (serveur embarqué, communication par channels)
+go run .                 # partie solo (menu : COOP, MMORPG, multi, scores)
 go run . --seed 42       # partie solo reproductible (même graine = même donjon)
 go run . --connect host:port   # multijoueur : connexion à un serveur distant (TCP)
 ```
@@ -30,9 +43,10 @@ go build -o donjon-cafeine .
 ### Serveur dédié (TCP) — multijoueur
 
 ```sh
-go run ./cmd/coffee-dungeon-server                  # écoute sur :27015
+go run ./cmd/coffee-dungeon-server                  # écoute sur :27015 (mode COOP)
 go run ./cmd/coffee-dungeon-server --addr :8080     # port personnalisé
 go run ./cmd/coffee-dungeon-server --seed 42        # partie reproductible
+go run ./cmd/coffee-dungeon-server --mode mmorpg    # monde ouvert (overworld + donjons)
 ```
 
 Puis connecte-toi depuis un autre terminal / machine (menu → **Multijoueur (TCP)**,
@@ -61,6 +75,8 @@ Les autres joueurs apparaissent sur la carte avec le glyphe `¶`.
 | `f` | lancer une boule de feu (8 mana, dégâts de zone autour de la cible) |
 | `g` ou `>` | descendre l'escalier (se tenir sur la case `>`) |
 | `G` ou `<` | remonter l'escalier (se tenir sur la case `<`) |
+| `e` | entrer dans un bâtiment `⌂` adjacent (MMORPG, monde ouvert) |
+| `x` | sortir du donjon vers le monde ouvert (MMORPG) |
 | `i` | inventaire (équiper `e`, utiliser `u`, jeter `d`) |
 | `m` | marchand (se tenir près du PNJ `M`) |
 | `?` | aide intégrée |
@@ -122,7 +138,9 @@ go run . --demo --seed 42
 # [VICTOIRE] seed=42 étage=10 niveau=7 PV=62/78 or=318 kills=32 tours=13457 score=2631
 ```
 
-Options : `--max-turns 30000` (limite de tours, défaut 30000), `--help` (usage).
+Options : `--max-turns 30000` (limite de tours, défaut 30000), `--mode mmorpg`
+(démo MMORPG : le bot entre dans le premier donjon de l'overworld puis joue),
+`--help` (usage).
 
 ## Tests
 
@@ -133,9 +151,13 @@ go test ./...
 - `internal/game` : tests unitaires (RNG déterministe, génération procédurale et
   connexité, FOV/fog of war, combat, IA, progression, transitions victoire/défaite,
   dimensions d'étage `NewStateSized`/`ClampWorldSize`, registre ECS/SOA `Entities`,
-  équilibrage : templates monstres, rollXP borné, Ascend, étages stables RNG dérivé)
-  + tests d'intégration (parties complètes en bot sur 20 graines, victoire et
-  défaite de bout en bout).
+  équilibrage : templates monstres, rollXP borné, Ascend, étages stables RNG dérivé,
+  **architecture maps** : `MapRegistry`/`Root`, overworld MMORPG, entrée/sortie
+  des bâtiments (`EnterBuilding`/`ExitBuilding`, instance réutilisée), fix bug
+  maps (map parente non affectée), focus IA restreint à la map courante,
+  victoire MMORPG de bout en bout)
+  + tests d'intégration (parties complètes en bot sur 20 graines COOP + 5 graines
+  MMORPG, victoire et défaite de bout en bout).
 - `internal/score` : persistance (ajout, tri, top 10, fichier absent/corrompu).
 - `internal/tui` : smoke tests (rendu, navigation clavier, sauvegarde du score)
   + tests du viewport plein écran (caméra centrée sur le joueur, resize,
@@ -144,21 +166,24 @@ go test ./...
 ## Structure du projet
 
 ```
-main.go               point d'entrée client (CLI : --seed, --demo, --connect, --max-turns)
-cmd/coffee-dungeon-server/   serveur de jeu dédié (TCP, déploiement VPS)
+main.go               point d'entrée client (CLI : --seed, --demo, --mode, --connect, --max-turns)
+cmd/coffee-dungeon-server/   serveur de jeu dédié (TCP, déploiement VPS, --mode coop|mmorpg)
 internal/game/        moteur de jeu pur — AUCUNE dépendance TUI, testé unitairement
   rng.go              RNG déterministe (seedable)
   world.go            génération procédurale d'étage (salles + couloirs + escaliers >/<)
+  map.go              Map (instance d'étage) + MapRegistry (registre de maps, illimité)
+  overworld.go        génération de l'overworld MMORPG (plaine + bâtiments ⌂ portails)
+  building.go         entrée/sortie des bâtiments (instances de donjon à la demande)
   fov.go              champ de vision (rayons de Bresenham) + fog of war
   ecs.go              registre ECS/SOA des monstres (tableaux parallèles par composant)
   entity.go           joueur, monstres (7 types), boss (stats, glyphes, templates)
   combat.go           résolution d'attaque (défense, variance, critiques)
-  ai.go               IA ennemie + pathfinding BFS + détection par ligne de vue
+  ai.go               IA ennemie + pathfinding BFS + détection par ligne de vue (par map)
   items.go            objets (or, potions, armes, armures) + ItemValue (prix marchand)
   merchant.go         PNJ marchand (spawn étages pairs, boutique, achat/vente)
   progression.go      XP (paliers 30*n, variance ±20%), niveaux, attaque/défense effectives
   state.go            état de partie, tours, sorts, victoire/défaite, score, journal, Ascend()
-  auto.go             bot AutoPlay (mode --demo et tests d'intégration, farm par étage)
+  auto.go             bot AutoPlay/AutoPlayMMORPG (mode --demo et tests d'intégration)
   snapshot.go         Snapshot sérialisable (JSON) — état visible envoyé aux clients
 internal/net/         protocole client/serveur (enveloppes JSON : Hello/Welcome/Input/Snapshot/End)
 internal/client/      GameClient (interface) + LocalClient (solo, channels) + TCPClient (multi, TCP)
@@ -195,7 +220,28 @@ En **multijoueur**, le serveur gère plusieurs joueurs (`players map[int]*game.P
 avec un **FOV par joueur** : chaque client reçoit un snapshot personnalisé
 (position + champ de vision). Les monstres gèrent leur **focus** côté serveur
 (`focusPlayer` dans `internal/game/ai.go`) : ils ciblent le joueur le plus
-proche détecté (portée + ligne de vue).
+proche détecté **sur leur propre map** (portée + ligne de vue).
+
+### Architecture du moteur : maps (v3)
+
+Un **étage = une `Map`** (instance complète : monde, monstres, items, marchand,
+FOV par joueur). Plusieurs maps coexistent dans le serveur
+(`State.Maps *MapRegistry`, nombre illimité, créées à la demande) :
+
+- Chaque joueur a un **`MapID`** : il ne voit et n'agit que dans sa map.
+- **Descendre/monter** change de `MapID` : la map parente persiste dans le
+  registre, les autres maps (et les joueurs dessus) ne sont **pas affectés**
+  (fix du bug maps 17/10 17:07). Remonter retourne sur la **même instance**
+  (mêmes tuiles, pas de régénération).
+- **MMORPG** : la map racine est l'**overworld** (`MapKindOverworld`, plaine
+  sans escaliers) parsemée de **bâtiments ⌂** (`Building`). Un bâtiment
+  « Donjon » mène à une **instance de donjon** (`MapKindBuilding`), créée à
+  la demande et **réutilisée** (une seule par bâtiment, liée via
+  `Building.InstanceMapID`). Touches : `e` pour entrer, `x` pour sortir.
+- Les monstres ne voient/agissent que sur leur map : le **focus IA** est
+  restreint aux joueurs présents sur la même map.
+- Les étages sont générés avec un **RNG dérivé** (`seed*1000 + mapID`) :
+  déterministes et stables entre les visites.
 
 ### Architecture du moteur : ECS + SOA
 

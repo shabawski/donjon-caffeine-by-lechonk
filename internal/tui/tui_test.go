@@ -102,17 +102,51 @@ func TestMenuQuit(t *testing.T) {
 	}
 }
 
+// TestMenuMMORPGStartsGame vérifie que l'option 1 (MMORPG) lance une partie
+// en monde ouvert : snapshot.Mode == MMORPG et titre "Monde ouvert".
+func TestMenuMMORPGStartsGame(t *testing.T) {
+	m, _ := newTestModel(42)
+	// Descend jusqu'à l'option 1 (MMORPG).
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.menuCursor != 1 {
+		t.Fatalf("curseur attendu 1, got %d", m.menuCursor)
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	if cmd == nil {
+		t.Fatal("enter doit lancer une commande de nouvelle partie")
+	}
+	msg := cmd()
+	if msg == nil {
+		t.Fatal("la commande doit produire un newGameMsg")
+	}
+	updated, _ = m.Update(msg)
+	m = updated.(*Model)
+	if m.screen != screenPlaying {
+		t.Fatal("enter doit lancer la partie depuis le menu")
+	}
+	if m.snapshot.Mode != game.ModeMMORPG {
+		t.Fatalf("mode attendu MMORPG, got %v", m.snapshot.Mode)
+	}
+	if m.mode != game.ModeMMORPG {
+		t.Fatalf("le modèle doit conserver le mode MMORPG, got %v", m.mode)
+	}
+	if v := m.View(); !strings.Contains(v, "Monde ouvert") {
+		t.Fatalf("le titre doit indiquer le monde ouvert: %q", v)
+	}
+}
+
 func TestMenuNavigationWraps(t *testing.T) {
 	m, _ := newTestModel(42)
 	m.Update(tea.KeyMsg{Type: tea.KeyUp}) // remonte au-dessus de 0 : reste à 0
 	if m.menuCursor != 0 {
 		t.Fatalf("curseur attendu 0, got %d", m.menuCursor)
 	}
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 7; i++ {
 		m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
-	if m.menuCursor != 3 {
-		t.Fatalf("curseur plafonné à 3 (4 options), got %d", m.menuCursor)
+	if m.menuCursor != 4 {
+		t.Fatalf("curseur plafonné à 4 (5 options), got %d", m.menuCursor)
 	}
 }
 
@@ -120,10 +154,11 @@ func TestMenuNavigationWraps(t *testing.T) {
 // l'écran de saisie de l'adresse serveur.
 func TestMenuMultiOuvreConnect(t *testing.T) {
 	m, _ := newTestModel(42)
-	// Descend jusqu'à l'option 1 (Multijoueur).
+	// Descend jusqu'à l'option 2 (Multijoueur).
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if m.menuCursor != 1 {
-		t.Fatalf("curseur attendu 1, got %d", m.menuCursor)
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.menuCursor != 2 {
+		t.Fatalf("curseur attendu 2, got %d", m.menuCursor)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.screen != screenConnect {
@@ -164,9 +199,9 @@ func TestPlayingMoveKey(t *testing.T) {
 	s := c.State()
 	found := false
 outer:
-	for y := 0; y < s.World.Height; y++ {
-		for x := 0; x+1 < s.World.Width; x++ {
-			if s.World.IsWalkable(x, y) && s.World.IsWalkable(x+1, y) && s.OccupiedByEnemy(x+1, y) == game.InvalidEntity {
+	for y := 0; y < s.CurrentMap().World.Height; y++ {
+		for x := 0; x+1 < s.CurrentMap().World.Width; x++ {
+			if s.CurrentMap().World.IsWalkable(x, y) && s.CurrentMap().World.IsWalkable(x+1, y) && s.OccupiedByEnemy(x+1, y) == game.InvalidEntity {
 				s.Player.X, s.Player.Y = x, y
 				found = true
 				break outer
@@ -251,9 +286,9 @@ func TestZQSDQMovesLeft(t *testing.T) {
 	s := c.State()
 	found := false
 outer:
-	for y := 0; y < s.World.Height; y++ {
-		for x := 1; x < s.World.Width; x++ {
-			if s.World.IsWalkable(x, y) && s.World.IsWalkable(x-1, y) && s.OccupiedByEnemy(x-1, y) == game.InvalidEntity {
+	for y := 0; y < s.CurrentMap().World.Height; y++ {
+		for x := 1; x < s.CurrentMap().World.Width; x++ {
+			if s.CurrentMap().World.IsWalkable(x, y) && s.CurrentMap().World.IsWalkable(x-1, y) && s.OccupiedByEnemy(x-1, y) == game.InvalidEntity {
 				s.Player.X, s.Player.Y = x, y
 				found = true
 				break outer
@@ -298,14 +333,14 @@ func TestVictoryScreen(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	s := game.NewState(42)
 	// Transforme le premier monstre en boss avec 1 PV (registre ECS/SOA).
-	if s.Entities.Len() == 0 {
+	if s.CurrentMap().Entities.Len() == 0 {
 		t.Fatal("aucun monstre disponible pour le test de victoire")
 	}
-	s.Entities.Kind[0] = game.KindBoss
-	s.Entities.Name[0] = "Seigneur des Tasses"
-	s.Entities.HP[0] = 1
+	s.CurrentMap().Entities.Kind[0] = game.KindBoss
+	s.CurrentMap().Entities.Name[0] = "Seigneur des Tasses"
+	s.CurrentMap().Entities.HP[0] = 1
 	s.Player.Attack = 1000
-	s.Player.X, s.Player.Y = s.Entities.X[0], s.Entities.Y[0]
+	s.Player.X, s.Player.Y = s.CurrentMap().Entities.X[0], s.CurrentMap().Entities.Y[0]
 	s.MovePlayer(0, 0) // attaque le boss → victoire
 	snap := s.Snapshot()
 	m := New(&mockClient{snap: snap}, snap, false)
@@ -396,7 +431,7 @@ func TestShopScreenOuvrePresDuMarchand(t *testing.T) {
 	// Place un marchand adjacent au joueur via le state du serveur,
 	// puis rafraîchit le snapshot du modèle pour refléter le changement.
 	s := c.State()
-	s.World.Merchant = game.NewMerchant(game.NewRNG(1), s.Player.X+1, s.Player.Y, 2)
+	s.CurrentMap().Merchant = game.NewMerchant(game.NewRNG(1), s.Player.X+1, s.Player.Y, 2)
 	m.snapshot = s.Snapshot()
 	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
 	if m.screen != screenShop {

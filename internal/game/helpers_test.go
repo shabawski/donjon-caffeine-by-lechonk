@@ -2,29 +2,32 @@ package game
 
 // newTestState construit un State sur une carte manuelle entourée de murs,
 // pour des tests déterministes indépendants de la génération procédurale.
+// La carte est enregistrée comme Map (donjon étage 1) dans le registre de maps.
 func newTestState(seed int64, w, h int) *State {
-	s := &State{RNG: NewRNG(seed), Seed: seed, Phase: PhasePlaying, Entities: NewEntities(), worldWidth: w, worldHeight: h}
-	s.World = &World{Width: w, Height: h, Depth: 1, Tiles: make([]Tile, w*h)}
+	s := &State{RNG: NewRNG(seed), Seed: seed, Phase: PhasePlaying, Maps: NewMapRegistry(seed, w, h), worldWidth: w, worldHeight: h}
+	m := s.Maps.Create(MapKindDungeon, 1, NoParentMapID, 0, 0)
+	m.World = &World{Width: w, Height: h, Depth: 1, Tiles: make([]Tile, w*h)}
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			if x == 0 || y == 0 || x == w-1 || y == h-1 {
-				s.World.Set(x, y, TileWall)
+				m.World.Set(x, y, TileWall)
 			} else {
-				s.World.Set(x, y, TileFloor)
+				m.World.Set(x, y, TileFloor)
 			}
 		}
 	}
-	s.FOV = NewFOV(w * h)
-	s.Player = Player{Entity: *NewPlayer(1, 1), Level: 1, MaxMana: StartMaxMana, Mana: StartMaxMana}
-	ComputeFOV(s.World, s.FOV, 1, 1, PlayerViewRange)
+	s.Player = Player{Entity: *NewPlayer(1, 1), Level: 1, MaxMana: StartMaxMana, Mana: StartMaxMana, MapID: m.ID}
+	m.SetFOV(s.Player.ID, NewFOV(w*h))
+	ComputeFOV(m.World, m.FOVFor(s.Player.ID), 1, 1, PlayerViewRange)
 	return s
 }
 
-// addEnemy place un monstre du type donné en (x, y) et retourne son EntityID.
+// addEnemy place un monstre du type donné en (x, y) sur la map courante et
+// retourne son EntityID.
 func (s *State) addEnemy(kind EntityKind, x, y int) EntityID {
 	t := enemyTemplate(kind)
 	t.X, t.Y = x, y
-	return s.Entities.Spawn(t)
+	return s.curMap().Entities.Spawn(t)
 }
 
 // floodFillCount compte les cases franchissables atteignables depuis (startX, startY).
