@@ -10,8 +10,9 @@ Un **roguelike dungeon-crawler en terminal**, écrit en Go pur (BubbleTea + Lipg
 ## Lancer le jeu
 
 ```sh
-go run .                 # partie jouable (interface terminal plein écran)
-go run . --seed 42       # partie reproductible (même graine = même donjon)
+go run .                 # partie solo (serveur embarqué, communication par channels)
+go run . --seed 42       # partie solo reproductible (même graine = même donjon)
+go run . --connect host:port   # multijoueur : connexion à un serveur distant (TCP)
 ```
 
 L'interface occupe **tout le terminal** (plein écran alternatif) et s'adapte
@@ -25,6 +26,24 @@ Ou compiler un binaire :
 go build -o donjon-cafeine .
 ./donjon-cafeine
 ```
+
+### Serveur dédié (TCP)
+
+```sh
+go run ./cmd/coffee-dungeon-server                  # écoute sur :27015
+go run ./cmd/coffee-dungeon-server --addr :8080     # port personnalisé
+go run ./cmd/coffee-dungeon-server --seed 42        # partie reproductible
+```
+
+Puis connecte-toi depuis un autre terminal / machine :
+
+```sh
+go run . --connect <host>:27015
+```
+
+> Pour le déploiement sur un VPS : compile le serveur (`go build -o coffee-dungeon-server ./cmd/coffee-dungeon-server`),
+> lance-le sur le VPS, ouvre le port (27015) dans le firewall, et connecte les
+> clients avec `--connect <ip-vps>:27015`.
 
 ## Commandes
 
@@ -118,7 +137,8 @@ go test ./...
 ## Structure du projet
 
 ```
-main.go               point d'entrée (CLI : --seed, --demo, --max-turns)
+main.go               point d'entrée client (CLI : --seed, --demo, --connect, --max-turns)
+cmd/coffee-dungeon-server/   serveur de jeu dédié (TCP, déploiement VPS)
 internal/game/        moteur de jeu pur — AUCUNE dépendance TUI, testé unitairement
   rng.go              RNG déterministe (seedable)
   world.go            génération procédurale d'étage (salles + couloirs + escaliers >/<)
@@ -132,7 +152,11 @@ internal/game/        moteur de jeu pur — AUCUNE dépendance TUI, testé unita
   progression.go      XP (paliers 30*n, variance ±20%), niveaux, attaque/défense effectives
   state.go            état de partie, tours, sorts, victoire/défaite, score, journal, Ascend()
   auto.go             bot AutoPlay (mode --demo et tests d'intégration, farm par étage)
-internal/tui/         interface terminal (BubbleTea + Lipgloss), plein écran
+  snapshot.go         Snapshot sérialisable (JSON) — état visible envoyé aux clients
+internal/net/         protocole client/serveur (enveloppes JSON : Hello/Welcome/Input/Snapshot/End)
+internal/client/      GameClient (interface) + LocalClient (solo, channels) + TCPClient (multi, TCP)
+internal/server/      serveur de jeu TCP (détient le game.State, applique les inputs, publie les snapshots)
+internal/tui/         interface terminal (BubbleTea + Lipgloss), plein écran — rend depuis un Snapshot
   model.go update.go view.go   modèle MVC BubbleTea + viewport (caméra centrée)
   keys.go             ZQSD/HJKL/flèches → déplacements
   styles.go           styles Lipgloss (variables package-level)
@@ -142,6 +166,26 @@ internal/tui/         interface terminal (BubbleTea + Lipgloss), plein écran
   gameover.go         écrans victoire / game over
 internal/score/       persistance des high scores (JSON, top 10, écriture atomique)
 ```
+
+### Architecture client/serveur
+
+Le TUI ne touche **plus** au moteur de jeu directement. Il communique avec un
+serveur via l'interface `client.GameClient` :
+
+- **Solo** (`LocalClient`) : le serveur tourne dans une goroutine du même
+  process et communique par **go channels**. Aucune différence visible pour
+  le joueur.
+- **Multijoueur** (`TCPClient`) : connexion **TCP** à `cmd/coffee-dungeon-server`.
+  Le client envoie des inputs (JSON), le serveur applique sur son `game.State`
+  (autorité) et renvoie des **snapshots**.
+
+Le serveur détient l'état autoritaire (`game.State`). Le client reçoit des
+`game.Snapshot` (capture sérialisable JSON de l'état visible : carte, joueur,
+monstres, FOV, journal) et rend depuis ce snapshot. Le protocole est du JSON
+délimités par des sauts de ligne (`internal/net/proto.go`).
+
+> Le multijoueur complet (plusieurs joueurs, FOV par joueur, focus des monstres
+> côté serveur) est en préparation (bloc 6).
 
 ### Architecture du moteur : ECS + SOA
 

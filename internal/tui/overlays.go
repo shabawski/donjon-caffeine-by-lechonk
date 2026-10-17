@@ -33,7 +33,7 @@ func (m *Model) viewHelp() string {
 // viewInventory rend l'inventaire : équipement actuel + liste des objets
 // gardés sur soi, avec curseur de sélection (e équiper, u utiliser, d jeter).
 func (m *Model) viewInventory() string {
-	p := &m.state.Player
+	p := &m.snapshot.Player
 	var b strings.Builder
 	b.WriteString(styleTitle.Render("🎒 Inventaire") + "\n\n")
 	b.WriteString(fmt.Sprintf("  Arme   : %s\n", equipName(p.WeaponName, p.WeaponBonus)))
@@ -41,8 +41,8 @@ func (m *Model) viewInventory() string {
 	b.WriteString(fmt.Sprintf("  Or     : %d pièces\n", p.Gold))
 	b.WriteString(fmt.Sprintf("  PV     : %d/%d\n", p.HP, p.MaxHP))
 	b.WriteString(fmt.Sprintf("  Mana   : %d/%d\n", p.Mana, p.MaxMana))
-	b.WriteString(fmt.Sprintf("  ATK    : %d (base %d)\n", p.EffectiveAttack(), p.Attack))
-	b.WriteString(fmt.Sprintf("  DEF    : %d (base %d)\n", p.EffectiveDefense(), p.Defense))
+	b.WriteString(fmt.Sprintf("  ATK    : %d (base %d)\n", p.EffectiveAtk, p.Attack))
+	b.WriteString(fmt.Sprintf("  DEF    : %d (base %d)\n", p.EffectiveDef, p.Defense))
 	b.WriteString(fmt.Sprintf("  Niveau : %d   XP : %d/%d\n", p.Level, p.XP, game.XPNeededForLevel(p.Level+1)))
 	b.WriteString(fmt.Sprintf("  Kills  : %d   Tours : %d\n", p.Kills, p.Turns))
 	b.WriteString(fmt.Sprintf("\n── Objets (%d) ──\n", len(p.Inventory)))

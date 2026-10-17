@@ -4,67 +4,64 @@ import (
 	"strings"
 	"testing"
 
-	"game-test/internal/game"
-
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // playerInViewport vérifie que le joueur est dans le rectangle du viewport.
 func playerInViewport(m *Model) bool {
-	p := &m.state.Player
+	p := &m.snapshot.Player
 	return p.X >= m.viewX && p.X < m.viewX+m.viewW &&
 		p.Y >= m.viewY && p.Y < m.viewY+m.viewH
 }
 
 func TestViewportContainsPlayer(t *testing.T) {
-	s := game.NewState(42)
-	m := New(s)
+	m, _ := newTestModel(42)
 	m.width, m.height = 80, 24
 	m.updateViewport()
 	if !playerInViewport(m) {
 		t.Fatalf("joueur (%d,%d) hors viewport [%d,%d[-[%d,%d[",
-			s.Player.X, s.Player.Y, m.viewX, m.viewY, m.viewX+m.viewW, m.viewY+m.viewH)
+			m.snapshot.Player.X, m.snapshot.Player.Y, m.viewX, m.viewY, m.viewX+m.viewW, m.viewY+m.viewH)
 	}
 }
 
 func TestViewportClampsToWorld(t *testing.T) {
-	s := game.NewState(42)
-	m := New(s)
+	m, _ := newTestModel(42)
 	// Terminal immense : le viewport ne dépasse pas le monde.
 	m.width, m.height = 500, 200
 	m.updateViewport()
-	if m.viewW > s.World.Width || m.viewH > s.World.Height {
+	if m.viewW > m.snapshot.Width || m.viewH > m.snapshot.Height {
 		t.Fatalf("viewport %dx%d dépasse le monde %dx%d",
-			m.viewW, m.viewH, s.World.Width, s.World.Height)
+			m.viewW, m.viewH, m.snapshot.Width, m.snapshot.Height)
 	}
 	if m.viewX < 0 || m.viewY < 0 ||
-		m.viewX+m.viewW > s.World.Width || m.viewY+m.viewH > s.World.Height {
+		m.viewX+m.viewW > m.snapshot.Width || m.viewY+m.viewH > m.snapshot.Height {
 		t.Fatalf("viewport hors du monde: [%d,%d]-[%d,%d]",
 			m.viewX, m.viewY, m.viewX+m.viewW, m.viewY+m.viewH)
 	}
 }
 
 func TestViewportFollowsPlayerAtEdge(t *testing.T) {
-	s := game.NewState(42)
-	m := New(s)
+	m, c := newTestModel(42)
 	m.width, m.height = 60, 20
 	m.updateViewport()
-	// Téléporte le joueur dans le coin inférieur droit du monde.
+	// Téléporte le joueur dans le coin inférieur droit du monde (via le state).
+	s := c.State()
 	s.Player.X = s.World.Width - 2
 	s.Player.Y = s.World.Height - 2
+	// Force un snapshot pour refléter la nouvelle position.
+	m.snapshot = s.Snapshot()
 	m.updateViewport()
 	if !playerInViewport(m) {
 		t.Fatalf("joueur (%d,%d) hors viewport après téléportation [%d,%d[-[%d,%d[",
-			s.Player.X, s.Player.Y, m.viewX, m.viewY, m.viewX+m.viewW, m.viewY+m.viewH)
+			m.snapshot.Player.X, m.snapshot.Player.Y, m.viewX, m.viewY, m.viewX+m.viewW, m.viewY+m.viewH)
 	}
-	if m.viewX+m.viewW > s.World.Width || m.viewY+m.viewH > s.World.Height {
+	if m.viewX+m.viewW > m.snapshot.Width || m.viewY+m.viewH > m.snapshot.Height {
 		t.Fatal("le viewport dépasse le monde après téléportation")
 	}
 }
 
 func TestWindowSizeMsgUpdatesViewport(t *testing.T) {
-	s := game.NewState(42)
-	m := New(s)
+	m, _ := newTestModel(42)
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	if m.width != 120 || m.height != 40 {
 		t.Fatalf("dimensions terminal non mises à jour: %dx%d", m.width, m.height)
@@ -83,8 +80,10 @@ func TestWindowSizeMsgUpdatesViewport(t *testing.T) {
 }
 
 func TestViewportAfterPlayerMove(t *testing.T) {
-	s := game.NewState(42)
-	// Place le joueur au milieu d'une zone ouverte.
+	m, c := newTestModel(42)
+	m.screen = screenPlaying
+	// Place le joueur au milieu d'une zone ouverte (via le state du serveur).
+	s := c.State()
 	found := false
 outer:
 	for y := 1; y < s.World.Height-1 && !found; y++ {
@@ -99,19 +98,17 @@ outer:
 	if !found {
 		t.Fatal("pas de case libre trouvée")
 	}
-	m := New(s)
-	m.screen = screenPlaying
 	m.width, m.height = 60, 20
+	m.snapshot = s.Snapshot()
 	m.updateViewport()
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	if !playerInViewport(m) {
 		t.Fatal("le joueur doit rester visible après un déplacement")
 	}
 }
 
 func TestViewGameFillsTerminalHeight(t *testing.T) {
-	s := game.NewState(42)
-	m := New(s)
+	m, _ := newTestModel(42)
 	m.screen = screenPlaying
 	m.width, m.height = 100, 30
 	m.updateViewport()
@@ -124,8 +121,7 @@ func TestViewGameFillsTerminalHeight(t *testing.T) {
 }
 
 func TestViewGameContainsFooter(t *testing.T) {
-	s := game.NewState(42)
-	m := New(s)
+	m, _ := newTestModel(42)
 	m.screen = screenPlaying
 	v := m.View()
 	if !strings.Contains(v, "ZQSD") {

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"game-test/internal/client"
 	"game-test/internal/game"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,12 +24,14 @@ const (
 const hudWidth = 40
 
 // Model est le modèle BubbleTea du Donjon Caféiné.
-// Toute la logique de jeu vit dans game.State ; le modèle ne fait que
-// traduire les touches en actions et rendre l'état.
+// Architecture client/serveur : le TUI ne touche plus au game.State.
+// Il envoie des inputs via client.GameClient et rend depuis le dernier
+// *game.Snapshot reçu du serveur (local via channels en solo, TCP en multi).
 // Le rendu plein écran passe par un viewport : une caméra centrée sur le
-// joueur, recalculée à chaque resize et à chaque action du joueur.
+// joueur, recalculée à chaque resize et à chaque snapshot reçu.
 type Model struct {
-	state      *game.State
+	client     client.GameClient // solo (channels) ou multi (TCP)
+	snapshot   *game.Snapshot    // dernier état reçu du serveur
 	screen     screen
 	width      int
 	height     int
@@ -45,11 +48,11 @@ type Model struct {
 	shopTab    int // onglet marchand : 0 = achat, 1 = vente
 }
 
-// New crée le modèle sur une partie donnée (démarrage sur le menu).
-// Les dimensions par défaut (80x24) sont remplacées par le premier
-// WindowSizeMsg envoyé par BubbleTea.
-func New(s *game.State) *Model {
-	m := &Model{state: s, screen: screenMenu, lastDX: 1, width: 80, height: 24}
+// New crée le modèle sur un client connecté (démarrage sur le menu).
+// Le snapshot initial a déjà été reçu par le main. Les dimensions par défaut
+// (80x24) sont remplacées par le premier WindowSizeMsg envoyé par BubbleTea.
+func New(c client.GameClient, snap *game.Snapshot) *Model {
+	m := &Model{client: c, snapshot: snap, screen: screenMenu, lastDX: 1, width: 80, height: 24}
 	m.updateViewport()
 	return m
 }
@@ -68,7 +71,8 @@ func (m *Model) Run() error {
 // borné aux limites du monde et limité par l'espace disponible dans le
 // terminal (moins le HUD à droite, moins le titre et le pied de page).
 func (m *Model) updateViewport() {
-	w := m.state.World
+	w := m.snapshot.Width
+	h := m.snapshot.Height
 	// Espace disponible pour la carte.
 	availW := m.width - hudWidth - 2 // -2 : marge entre la carte et le HUD
 	availH := m.height - 2           // -2 : titre (haut) + pied de page (bas)
@@ -79,11 +83,11 @@ func (m *Model) updateViewport() {
 		availH = 5
 	}
 	// Le viewport ne dépasse pas les dimensions du monde.
-	m.viewW = min(availW, w.Width)
-	m.viewH = min(availH, w.Height)
+	m.viewW = min(availW, w)
+	m.viewH = min(availH, h)
 	// Centrer sur le joueur.
-	m.viewX = m.state.Player.X - m.viewW/2
-	m.viewY = m.state.Player.Y - m.viewH/2
+	m.viewX = m.snapshot.Player.X - m.viewW/2
+	m.viewY = m.snapshot.Player.Y - m.viewH/2
 	// Borner dans le monde.
 	if m.viewX < 0 {
 		m.viewX = 0
@@ -91,11 +95,11 @@ func (m *Model) updateViewport() {
 	if m.viewY < 0 {
 		m.viewY = 0
 	}
-	if m.viewX+m.viewW > w.Width {
-		m.viewX = w.Width - m.viewW
+	if m.viewX+m.viewW > w {
+		m.viewX = w - m.viewW
 	}
-	if m.viewY+m.viewH > w.Height {
-		m.viewY = w.Height - m.viewH
+	if m.viewY+m.viewH > h {
+		m.viewY = h - m.viewH
 	}
 	if m.viewX < 0 {
 		m.viewX = 0

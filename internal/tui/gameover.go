@@ -9,7 +9,7 @@ import (
 
 // viewGameOver rend l'écran de fin (victoire ou défaite) avec le récapitulatif.
 func (m *Model) viewGameOver() string {
-	s := m.state
+	s := m.snapshot
 	var b strings.Builder
 	if s.Phase == game.PhaseVictory {
 		b.WriteString(styleVictory.Render("🏆 VICTOIRE !") + "\n\n")
@@ -19,7 +19,7 @@ func (m *Model) viewGameOver() string {
 		b.WriteString(fmt.Sprintf("Tu es mort : %s.\n\n", s.CauseOfDeath))
 	}
 	b.WriteString(fmt.Sprintf("  Étage %d/%d · Niveau %d · Or %d · Kills %d · Tours %d\n",
-		s.World.Depth, game.MaxDepth, s.Player.Level, s.Player.Gold, s.Player.Kills, s.Player.Turns))
+		s.Depth, game.MaxDepth, s.Player.Level, s.Player.Gold, s.Player.Kills, s.Player.Turns))
 	b.WriteString(fmt.Sprintf("  Score : %d\n\n", s.Score()))
 	b.WriteString(styleCursor.Render("[r]") + " Rejouer   " +
 		styleCursor.Render("[s]") + " Scores   " +

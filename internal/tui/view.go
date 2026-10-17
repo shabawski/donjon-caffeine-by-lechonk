@@ -33,14 +33,14 @@ func (m *Model) View() string {
 // viewGame rend le titre, la carte (viewport centré sur le joueur) à gauche,
 // le HUD à droite, et un pied de page avec les raccourcis clavier.
 func (m *Model) viewGame() string {
-	title := styleTitle.Render(fmt.Sprintf("☕ Donjon Caféiné — étage %d/%d", m.state.World.Depth, game.MaxDepth))
+	title := styleTitle.Render(fmt.Sprintf("☕ Donjon Caféiné — étage %d/%d", m.snapshot.Depth, game.MaxDepth))
 	mapW := m.width - hudWidth - 2
 	if mapW < m.viewW {
 		mapW = m.viewW
 	}
 	mapBlock := lipgloss.NewStyle().Width(mapW).Render(m.renderViewport())
 	body := lipgloss.JoinHorizontal(lipgloss.Top, mapBlock, m.renderHUD())
-	footer := styleDim.Render("ZQSD/HJKL/flèches: bouger · f: feu · g: escalier · i: inventaire · ?: aide · Q: quitter")
+	footer := styleDim.Render("ZQSD/HJKL/flèches: bouger · f: feu · g/G: escalier · i: inventaire · m: marchand · ?: aide · Q: quitter")
 	return title + "\n" + body + "\n" + footer
 }
 
@@ -48,22 +48,22 @@ func (m *Model) viewGame() string {
 // centrée sur le joueur. Fog of war : cases jamais vues en espace,
 // cases explorées mais hors vue en atténué, cases visibles en couleur.
 func (m *Model) renderViewport() string {
-	s := m.state
+	s := m.snapshot
 	var b strings.Builder
 	for vy := 0; vy < m.viewH; vy++ {
 		wy := m.viewY + vy
 		for vx := 0; vx < m.viewW; vx++ {
 			wx := m.viewX + vx
-			if !s.World.InBounds(wx, wy) {
+			if !s.InBounds(wx, wy) {
 				b.WriteString(" ")
 				continue
 			}
-			i := wy*s.World.Width + wx
+			i := wy*s.Width + wx
 			switch {
-			case !s.FOV.Explored[i]:
+			case !s.Explored[i]:
 				b.WriteString(" ")
-			case !s.FOV.Visible[i]:
-				b.WriteString(styleDim.Render(string(s.World.Tiles[i].Glyph())))
+			case !s.Visible[i]:
+				b.WriteString(styleDim.Render(string(s.Tiles[i].Glyph())))
 			default:
 				r, st := glyphAt(s, wx, wy)
 				b.WriteString(st.Render(string(r)))
@@ -78,20 +78,20 @@ func (m *Model) renderViewport() string {
 
 // glyphAt choisit le glyph et le style d'une case visible :
 // joueur > marchand > monstre > objet > tuile.
-func glyphAt(s *game.State, x, y int) (rune, lipgloss.Style) {
+func glyphAt(s *game.Snapshot, x, y int) (rune, lipgloss.Style) {
 	if s.Player.X == x && s.Player.Y == y {
 		return s.Player.Glyph, stylePlayer
 	}
-	if m := s.World.Merchant; m != nil && m.X == x && m.Y == y {
-		return m.Glyph, styleMerchant
+	if s.Merchant != nil && s.Merchant.X == x && s.Merchant.Y == y {
+		return s.Merchant.Glyph, styleMerchant
 	}
-	if id := s.OccupiedByEnemy(x, y); id != game.InvalidEntity {
-		return s.Entities.Glyph[int(id)], styleForKind(s.Entities.Kind[int(id)])
+	if e := s.EnemyAt(x, y); e != nil {
+		return e.Glyph, styleForKind(e.Kind)
 	}
 	if it := s.ItemAt(x, y); it != nil {
 		return it.Glyph, styleForItem(it.Kind)
 	}
-	t := s.World.Tiles[y*s.World.Width+x]
+	t := s.Tiles[y*s.Width+x]
 	switch t {
 	case game.TileStairs:
 		return t.Glyph(), styleStairs
@@ -109,13 +109,13 @@ func glyphAt(s *game.State, x, y int) (rune, lipgloss.Style) {
 // Le rendu produit exactement viewH lignes (sans saut de ligne final) pour
 // que JoinHorizontal aligne correctement la carte et le HUD.
 func (m *Model) renderHUD() string {
-	s := m.state
+	s := m.snapshot
 	p := &s.Player
 	lines := make([]string, 0, m.viewH)
 	lines = append(lines, styleHP.Render(bar(p.HP, p.MaxHP, 12))+fmt.Sprintf(" PV %d/%d", p.HP, p.MaxHP))
 	lines = append(lines, styleMana.Render(bar(p.Mana, p.MaxMana, 12))+fmt.Sprintf(" Mana %d/%d", p.Mana, p.MaxMana))
 	lines = append(lines, fmt.Sprintf("Niv %d  XP %d/%d", p.Level, p.XP, game.XPNeededForLevel(p.Level+1)))
-	lines = append(lines, fmt.Sprintf("ATK %d  DEF %d", p.EffectiveAttack(), p.EffectiveDefense()))
+	lines = append(lines, fmt.Sprintf("ATK %d  DEF %d", p.EffectiveAtk, p.EffectiveDef))
 	lines = append(lines, fmt.Sprintf("Or %d   Kills %d   Tours %d", p.Gold, p.Kills, p.Turns))
 	lines = append(lines, "Arme   "+equipName(p.WeaponName, p.WeaponBonus))
 	lines = append(lines, "Armure "+equipName(p.ArmorName, p.ArmorBonus))

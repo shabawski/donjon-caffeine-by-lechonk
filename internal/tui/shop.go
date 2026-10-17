@@ -11,8 +11,8 @@ import (
 // et onglet vente (inventaire du joueur avec prix de revente à 50%).
 // S'ouvre avec la touche m quand le joueur est adjacent au PNJ marchand (M).
 func (m *Model) viewShop() string {
-	s := m.state
-	merchant := s.World.Merchant
+	s := m.snapshot
+	merchant := s.Merchant
 	var b strings.Builder
 	b.WriteString(styleTitle.Render("💰 Marchand") + "\n\n")
 	b.WriteString(fmt.Sprintf("  Or : %d pièces\n\n", s.Player.Gold))
