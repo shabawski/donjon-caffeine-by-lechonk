@@ -49,6 +49,7 @@ type Model struct {
 	shopTab      int    // onglet marchand : 0 = achat, 1 = vente
 	connectInput string // adresse host:port en cours de saisie (écran connexion)
 	connectErr   string // dernière erreur de connexion (affichée sous le champ)
+	pendingInput bool   // un input a été envoyé, le snapshot de réponse n'est pas encore reçu (tests)
 }
 
 // New crée le modèle sur un client connecté (démarrage sur le menu).

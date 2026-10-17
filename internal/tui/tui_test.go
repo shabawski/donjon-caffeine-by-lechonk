@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"game-test/internal/client"
 	"game-test/internal/game"
@@ -19,15 +20,32 @@ func newTestModel(seed int64) (*Model, *client.LocalClient) {
 	return New(c, snap), c
 }
 
-// press envoie une touche au modèle et exécute la commande résultante
-// (attend le snapshot du serveur local) pour garder les tests synchrones.
+// press envoie une touche au modèle et consomme le snapshot de réponse si un
+// input a été envoyé. Les commandes bloquantes (waitSnapshot) sont exécutées
+// dans une goroutine avec un timeout court : elles sont ignorées si elles ne
+// produisent pas de message rapidement (pas de boucle BubbleTea dans les tests).
 func press(m *Model, key tea.KeyMsg) *Model {
 	updated, cmd := m.Update(key)
 	m = updated.(*Model)
 	if cmd != nil {
-		msg := cmd()
-		if msg != nil {
-			updated, _ = m.Update(msg)
+		type result struct{ msg tea.Msg }
+		ch := make(chan result, 1)
+		go func() { ch <- result{cmd()} }()
+		select {
+		case r := <-ch:
+			if r.msg != nil {
+				updated, _ = m.Update(r.msg)
+				m = updated.(*Model)
+			}
+		case <-time.After(100 * time.Millisecond):
+			// Commande bloquante (waitSnapshot) : ignorée.
+		}
+	}
+	// Si un input a été envoyé, consomme le snapshot de réponse.
+	if m.pendingInput {
+		snap, err := m.client.NextSnapshot()
+		if err == nil && snap != nil {
+			updated, _ = m.Update(snapshotMsg{snap})
 			m = updated.(*Model)
 		}
 	}

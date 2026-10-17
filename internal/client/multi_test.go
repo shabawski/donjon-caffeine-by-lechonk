@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -209,7 +210,10 @@ func TestTCPClientConcurrentNextSnapshot(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_, err := c.NextSnapshot()
-			if err != nil {
+			// EOF / nil sont valides : fin de partie (le joueur peut mourir
+			// pendant les 10 tours "wait" → le serveur envoie MsgEnd puis
+			// ferme la connexion). Le but du test est l'absence de panic.
+			if err != nil && err != io.EOF {
 				t.Errorf("NextSnapshot: %v", err)
 			}
 		}()
@@ -250,4 +254,79 @@ func TestTCPClientLargeSnapshot(t *testing.T) {
 		t.Fatalf("snapshot trop petit pour le test de dépassement de buffer: %d octets", len(data))
 	}
 	t.Logf("snapshot JSON: %d octets (dépasse le buffer bufio par défaut de 4096)", len(data))
+}
+
+// TestServerSlowClientDoesNotBlockOthers — RÉGRESSION (17/10 15:20) : un
+// client lent (ne consomme pas ses snapshots) ne doit pas bloquer le serveur.
+// Avant le fix, broadcastSnapshotsLocked écrivait sur les connexions TCP en
+// tenant le mutex global → un client lent bloquait TOUT le serveur (l'autre
+// joueur ne recevait plus rien, "bloqué, les inputs ne répondent plus").
+// Après le fix : outbox par client + writeLoop, broadcast hors mutex, client
+// trop lent déconnecté (outbox plein).
+func TestServerSlowClientDoesNotBlockOthers(t *testing.T) {
+	srv := server.NewServer(42, 40, 20)
+	if err := srv.Listen("127.0.0.1:0"); err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer srv.Close()
+	go srv.Serve()
+
+	// Client 1 : actif (consomme ses snapshots).
+	c1, _ := NewTCPClient(srv.Addr())
+	if err := c1.Connect(); err != nil {
+		t.Fatalf("c1 connect: %v", err)
+	}
+	defer c1.Close()
+	if _, err := c1.NextSnapshot(); err != nil {
+		t.Fatalf("c1 initial: %v", err)
+	}
+
+	// Client 2 : lent (lit le snapshot initial, puis ne consomme PLUS RIEN).
+	c2, _ := NewTCPClient(srv.Addr())
+	if err := c2.Connect(); err != nil {
+		t.Fatalf("c2 connect: %v", err)
+	}
+	defer c2.Close()
+	if _, err := c2.NextSnapshot(); err != nil {
+		t.Fatalf("c2 initial: %v", err)
+	}
+
+	// Envoie 300 inputs depuis c1. L'outbox de c2 fait 256 → c2 sera déconnecté
+	// par le serveur (trop lent). c1 doit recevoir les snapshots sans blocage.
+	const n = 300
+	for i := 0; i < n; i++ {
+		_ = c1.SendInput(netproto.InputPayload{Kind: netproto.InputWait})
+	}
+
+	// Lit les snapshots de c1 jusqu'à épuisement ou fin de partie (le joueur
+	// peut mourir pendant les 300 tours "wait" — les monstres l'attaquent).
+	snapCh := make(chan *game.Snapshot, n)
+	go func() {
+		for i := 0; i < n; i++ {
+			snap, err := c1.NextSnapshot()
+			if err != nil {
+				t.Errorf("c1 snapshot %d: %v", i, err)
+				return
+			}
+			snapCh <- snap
+			if snap == nil {
+				return // fin de partie (MsgEnd)
+			}
+		}
+	}()
+	received := 0
+	deadline := time.After(10 * time.Second)
+	for received < n {
+		select {
+		case snap := <-snapCh:
+			received++
+			if snap == nil {
+				t.Logf("fin de partie après %d snapshots (joueur mort)", received)
+				return // OK : le serveur a répondu jusqu'à la fin
+			}
+		case <-deadline:
+			t.Fatalf("timeout: c1 n'a reçu que %d/%d snapshots (serveur bloqué par c2 lent ?)", received, n)
+		}
+	}
+	t.Logf("c1 a reçu %d snapshots sans blocage (c2 lent géré)", received)
 }

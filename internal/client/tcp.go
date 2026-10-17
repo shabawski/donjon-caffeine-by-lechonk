@@ -81,10 +81,22 @@ func (c *TCPClient) readLoop(reader *bufio.Reader) {
 			if err := netproto.DecodePayload(env, &payload); err != nil || payload.Snap == nil {
 				continue
 			}
+			// Drop si le channel est plein : garde toujours le snapshot le
+			// plus récent (évite de bloquer readLoop si le TUI est en overlay
+			// et ne consomme pas — le serveur ne doit jamais bloquer).
 			select {
 			case c.snapshots <- payload.Snap:
 			case <-c.done:
 				return
+			default:
+				select {
+				case <-c.snapshots:
+				default:
+				}
+				select {
+				case c.snapshots <- payload.Snap:
+				default:
+				}
 			}
 		case netproto.MsgEnd:
 			close(c.snapshots) // fin de partie

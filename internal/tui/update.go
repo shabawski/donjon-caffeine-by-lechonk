@@ -40,12 +40,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	case snapshotMsg:
 		m.snapshot = msg.snap
+		m.pendingInput = false
 		m.afterSnapshot()
-		// Relancer l'attente du prochain snapshot : en multi, le serveur
-		// broadcast à tous les clients après chaque input, donc on reçoit
-		// des snapshots même sans input (pour voir les autres joueurs).
-		// En solo, aucun snapshot n'arrive sans input : la commande bloque
-		// jusqu'au prochain input (qui draine puis envoie).
+		// Relancer l'attente du prochain snapshot (UN SEUL waitSnapshot en
+		// cours) : en multi, le serveur broadcast à tous les clients après
+		// chaque input, donc on reçoit des snapshots même sans input (pour
+		// voir les autres joueurs). En solo, la commande bloque jusqu'au
+		// prochain input.
 		if m.screen == screenPlaying {
 			return m, m.waitSnapshot()
 		}
@@ -55,10 +56,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.snapshot = msg.snapshot
 		m.screen = screenPlaying
 		m.scoreSaved = false
+		m.pendingInput = false
 		m.lastDX, m.lastDY = 1, 0
 		m.invCursor, m.shopCursor, m.shopTab = 0, 0, 0
 		m.updateViewport()
-		return m, nil
+		return m, m.waitSnapshot() // démarre la boucle de lecture
 	case errMsg:
 		return m, tea.Quit
 	case connectErrMsg:
@@ -68,13 +70,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// sendInput envoie une action au serveur et retourne une commande qui attend
-// le prochain snapshot. Le rendu se met à jour à la réception (snapshotMsg).
-// Avant l'envoi, on draine les snapshots en attente (broadcasts des autres
-// joueurs en multi) pour que le prochain NextSnapshot corresponde à NOTRE input.
+// sendInput envoie une action au serveur. NE RETOURNE PAS de waitSnapshot :
+// le waitSnapshot en cours (lancé au démarrage ou après le dernier snapshot)
+// recevra le prochain snapshot. En retourner un second en créerait deux en
+// parallèle — le "mauvais" volerait le snapshot de réponse et le joueur
+// semblerait bloqué (bug 17/10 15:20).
 func (m *Model) sendInput(in net.InputPayload) (tea.Model, tea.Cmd) {
 	m.client.DrainSnapshots()
 	_ = m.client.SendInput(in)
+	m.pendingInput = true
+	return m, nil
+}
+
+// enterPlaying revient à l'écran de jeu depuis un overlay : draine les
+// snapshots en attente (broadcasts reçus pendant l'overlay) et relance la
+// boucle de lecture.
+func (m *Model) enterPlaying() (tea.Model, tea.Cmd) {
+	m.screen = screenPlaying
+	m.client.DrainSnapshots()
 	return m, m.waitSnapshot()
 }
 
@@ -123,7 +136,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case screenHelp:
 		switch msg.String() {
 		case "esc", "?", "enter":
-			m.screen = screenPlaying
+			return m.enterPlaying()
 		}
 		return m, nil
 	case screenInventory:
@@ -235,6 +248,7 @@ func (m *Model) updatePlaying(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		m.screen = screenInventory
 		m.invCursor = 0
+		m.client.DrainSnapshots()
 	case "m":
 		// Ouvrir le marchand si adjacent (distance de Chebyshev <= 1).
 		if m.snapshot.Merchant != nil && chebyshev(
@@ -243,9 +257,11 @@ func (m *Model) updatePlaying(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.screen = screenShop
 			m.shopCursor = 0
 			m.shopTab = 0
+			m.client.DrainSnapshots()
 		}
 	case "?":
 		m.screen = screenHelp
+		m.client.DrainSnapshots()
 	case "Q", "esc":
 		m.screen = screenMenu // abandon de la partie en cours (q = gauche en ZQSD)
 	case "ctrl+c":
@@ -261,7 +277,7 @@ func (m *Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	inv := m.snapshot.Player.Inventory
 	switch msg.String() {
 	case "esc", "i", "enter":
-		m.screen = screenPlaying
+		return m.enterPlaying()
 	case "up", "k", "z":
 		if m.invCursor > 0 {
 			m.invCursor--
@@ -285,7 +301,7 @@ func (m *Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) updateShop(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "m":
-		m.screen = screenPlaying
+		return m.enterPlaying()
 	case "tab", "h", "l":
 		m.shopTab = 1 - m.shopTab // bascule achat (0) / vente (1)
 		m.shopCursor = 0
