@@ -90,6 +90,8 @@ func glyphAt(s *game.State, x, y int) (rune, lipgloss.Style) {
 	switch t {
 	case game.TileStairs:
 		return t.Glyph(), styleStairs
+	case game.TileStairsUp:
+		return t.Glyph(), styleStairsUp
 	case game.TileWall:
 		return t.Glyph(), styleWall
 	default:

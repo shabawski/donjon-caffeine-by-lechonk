@@ -16,6 +16,7 @@ func (m *Model) viewHelp() string {
 		{". (point)", "attendre un tour"},
 		{"f", "boule de feu (8 mana, dégâts de zone)"},
 		{"g ou >", "descendre l'escalier (se tenir dessus)"},
+		{"G ou <", "remonter l'escalier (se tenir dessus)"},
 		{"i", "inventaire / équipement"},
 		{"?", "cette aide"},
 		{"Q (maj) ou esc", "retour au menu (abandon)"},

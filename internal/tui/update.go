@@ -90,6 +90,9 @@ func (m *Model) updatePlaying(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "g", ">":
 		m.state.Descend()
 		m.afterPlayerAction()
+	case "G", "<":
+		m.state.Ascend()
+		m.afterPlayerAction()
 	case "i":
 		m.screen = screenInventory
 	case "?":

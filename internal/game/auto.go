@@ -3,13 +3,20 @@ package game
 // AutoAction choisit et applique une action pour le joueur.
 // Utilisée par le mode --demo (partie automatique headless) et les tests
 // d'intégration. Retourne false si la partie est terminée.
+//
+// Stratégie : farmer chaque étage (tuer les monstres) jusqu'à avoir un niveau
+// >= la profondeur, puis descendre. Au dernier étage, chasser le boss.
 func (s *State) AutoAction() bool {
 	if s.Phase != PhasePlaying {
 		return false
 	}
 	p := &s.Player
-	// 1. Descendre si le joueur est sur l'escalier.
-	if s.World.HasStairs && p.X == s.World.StairsX && p.Y == s.World.StairsY {
+	aliveCount := 0
+	s.Entities.EachAlive(func(EntityID) { aliveCount++ })
+	// 1. Descendre si sur l'escalier ET (assez farmé OU plus de monstres OU
+	//    limite de tours atteinte sur cet étage — évite de rester bloqué).
+	if s.World.HasStairs && p.X == s.World.StairsX && p.Y == s.World.StairsY &&
+		(p.Level >= s.World.Depth || aliveCount == 0 || s.floorTurns > 300) {
 		s.Descend()
 		return true
 	}
@@ -31,11 +38,20 @@ func (s *State) AutoAction() bool {
 	if float64(p.HP)/float64(p.MaxHP) < 0.35 && s.tryFlee() {
 		return true
 	}
-	// 5. Se diriger vers l'escalier (ou chasser le boss au dernier étage).
+	// 5. Cible : boss au dernier étage, monstre le plus proche si pas assez
+	//    farmé, sinon l'escalier. Si BFS vers le monstre échoue (mur), on
+	//    retombe sur l'escalier.
 	targetX, targetY := s.World.StairsX, s.World.StairsY
 	if !s.World.HasStairs {
 		if b := s.boss(); b != InvalidEntity {
 			targetX, targetY = s.Entities.X[int(b)], s.Entities.Y[int(b)]
+		}
+	} else if p.Level < s.World.Depth && aliveCount > 0 {
+		if tx, ty, ok := s.nearestEnemy(); ok {
+			blocked := func(x, y int) bool { return s.Occupied(x, y) }
+			if _, _, reachable := BFSNextStep(s.World, blocked, p.X, p.Y, tx, ty); reachable {
+				targetX, targetY = tx, ty
+			}
 		}
 	}
 	blocked := func(x, y int) bool { return s.Occupied(x, y) }
@@ -53,6 +69,24 @@ func (s *State) AutoAction() bool {
 	}
 	s.PlayerWait()
 	return true
+}
+
+// nearestEnemy renvoie le monstre vivant le plus proche du joueur (pas de
+// contrainte de visibilité, contrairement à nearestVisibleEnemy).
+func (s *State) nearestEnemy() (int, int, bool) {
+	bestDist := 1 << 30
+	found := false
+	bx, by := 0, 0
+	e := s.Entities
+	e.EachAlive(func(id EntityID) {
+		i := int(id)
+		if d := chebDist(s.Player.X, s.Player.Y, e.X[i], e.Y[i]); d < bestDist {
+			bestDist = d
+			bx, by = e.X[i], e.Y[i]
+			found = true
+		}
+	})
+	return bx, by, found
 }
 
 // tryFlee déplace le joueur vers la case voisine qui l'éloigne le plus des

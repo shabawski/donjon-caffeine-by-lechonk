@@ -111,7 +111,7 @@ func TestWorldAtOutOfBounds(t *testing.T) {
 }
 
 func TestTileGlyph(t *testing.T) {
-	if TileWall.Glyph() != '#' || TileFloor.Glyph() != '.' || TileStairs.Glyph() != '>' {
+	if TileWall.Glyph() != '#' || TileFloor.Glyph() != '.' || TileStairs.Glyph() != '>' || TileStairsUp.Glyph() != '<' {
 		t.Fatal("glyphs de tuiles incorrects")
 	}
 }

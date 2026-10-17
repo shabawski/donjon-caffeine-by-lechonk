@@ -58,11 +58,11 @@ func TestBFSNextStepShortestPath(t *testing.T) {
 func TestEnemyTurnAttacksAdjacentPlayer(t *testing.T) {
 	s := newTestState(1, 15, 15)
 	s.Player.X, s.Player.Y = 5, 5
-	s.Player.HP = 30
+	s.Player.HP = s.Player.MaxHP
 	rat := s.addEnemy(KindRat, 6, 5)
 	ComputeFOV(s.World, s.FOV, 5, 5, PlayerViewRange)
 	s.EnemyTurn(rat)
-	if s.Player.HP >= 30 {
+	if s.Player.HP >= s.Player.MaxHP {
 		t.Fatal("un monstre adjacent doit attaquer le joueur")
 	}
 }
@@ -149,5 +149,50 @@ func TestNonBossDoesNotDetectOutsideFOV(t *testing.T) {
 	}
 	if s.Player.HP != s.Player.MaxHP {
 		t.Fatal("un gobelin hors détection ne doit jamais attaquer à distance")
+	}
+}
+
+// TestDetectsPlayerWallBlocksLOS : un mur entre le monstre et le joueur bloque
+// la détection, même si le joueur est dans la portée de détection.
+func TestDetectsPlayerWallBlocksLOS(t *testing.T) {
+	s := newTestState(1, 20, 20)
+	s.Player.X, s.Player.Y = 5, 10
+	// Mur vertical complet en x=10 : la carte est coupée en deux.
+	for y := 0; y < 20; y++ {
+		s.World.Set(10, y, TileWall)
+	}
+	gob := s.addEnemy(KindGoblin, 12, 10) // distance 7 = DetectRange, mais mur en x=10
+	if s.detectsPlayer(gob) {
+		t.Fatal("un mur doit bloquer la détection du gobelin")
+	}
+	// Sans mur entre les deux, le gobelin détecte le joueur.
+	s.World.Set(10, 10, TileFloor)
+	if !s.detectsPlayer(gob) {
+		t.Fatal("sans mur, le gobelin doit détecter le joueur à distance 7")
+	}
+}
+
+// TestDetectsPlayerOutOfRange : hors de la portée de détection, pas de détection
+// même avec une ligne de vue dégagée.
+func TestDetectsPlayerOutOfRange(t *testing.T) {
+	s := newTestState(1, 30, 30)
+	s.Player.X, s.Player.Y = 5, 15
+	gob := s.addEnemy(KindGoblin, 20, 15) // distance 15 > DetectRange (7), LOS dégagée
+	if s.detectsPlayer(gob) {
+		t.Fatal("hors de portée, le gobelin ne doit pas détecter le joueur")
+	}
+}
+
+// TestBossDetectsThroughWall : le boss flaire le joueur à travers les murs
+// (règle spéciale du boss, dans sa portée de détection).
+func TestBossDetectsThroughWall(t *testing.T) {
+	s := newTestState(1, 20, 20)
+	s.Player.X, s.Player.Y = 5, 10
+	for y := 0; y < 20; y++ {
+		s.World.Set(10, y, TileWall)
+	}
+	boss := s.addEnemy(KindBoss, 15, 10) // distance 10 <= DetectRange (12), mur entre les deux
+	if !s.detectsPlayer(boss) {
+		t.Fatal("le boss doit flairer le joueur à travers les murs")
 	}
 }

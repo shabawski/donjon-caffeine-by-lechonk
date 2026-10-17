@@ -8,6 +8,9 @@ const (
 	KindRat
 	KindGoblin
 	KindSkeleton
+	KindSlime
+	KindBat
+	KindGolem
 	KindBoss
 )
 
@@ -39,8 +42,8 @@ func NewPlayer(x, y int) *Entity {
 		Glyph:   '@',
 		X:       x,
 		Y:       y,
-		MaxHP:   30,
-		HP:      30,
+		MaxHP:   40,
+		HP:      40,
 		Attack:  5,
 		Defense: 1,
 	}
@@ -67,10 +70,28 @@ func enemyTemplate(kind EntityKind) Entity {
 			MaxHP: 22, HP: 22, Attack: 6, Defense: 3,
 			XPValue: 20, DetectRange: 6,
 		}
+	case KindSlime:
+		return Entity{
+			Kind: KindSlime, Name: "slime", Glyph: 'j',
+			MaxHP: 6, HP: 6, Attack: 2, Defense: 0,
+			XPValue: 4, DetectRange: 5, FleeBelow: 0.3,
+		}
+	case KindBat:
+		return Entity{
+			Kind: KindBat, Name: "chauve-souris", Glyph: 'v',
+			MaxHP: 10, HP: 10, Attack: 4, Defense: 0,
+			XPValue: 10, DetectRange: 8,
+		}
+	case KindGolem:
+		return Entity{
+			Kind: KindGolem, Name: "golem de pierre", Glyph: 'G',
+			MaxHP: 40, HP: 40, Attack: 7, Defense: 6,
+			XPValue: 35, DetectRange: 5, // ne fuit jamais (FleeBelow = 0)
+		}
 	case KindBoss:
 		return Entity{
 			Kind: KindBoss, Name: "Seigneur des Tasses", Glyph: 'B',
-			MaxHP: 60, HP: 60, Attack: 9, Defense: 4,
+			MaxHP: 120, HP: 120, Attack: 11, Defense: 5,
 			XPValue: 200, DetectRange: 12,
 		}
 	default:
@@ -82,10 +103,12 @@ func enemyTemplate(kind EntityKind) Entity {
 func EnemyKindsForDepth(depth int) []EntityKind {
 	switch {
 	case depth <= 2:
-		return []EntityKind{KindRat, KindGoblin}
+		return []EntityKind{KindRat, KindSlime, KindGoblin}
 	case depth <= 5:
-		return []EntityKind{KindRat, KindGoblin, KindSkeleton}
+		return []EntityKind{KindRat, KindGoblin, KindSkeleton, KindBat}
+	case depth <= 7:
+		return []EntityKind{KindGoblin, KindSkeleton, KindBat, KindGolem}
 	default:
-		return []EntityKind{KindRat, KindGoblin, KindSkeleton}
+		return []EntityKind{KindSkeleton, KindGolem, KindBat}
 	}
 }

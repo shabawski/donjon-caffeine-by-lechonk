@@ -34,6 +34,7 @@ go build -o donjon-cafeine .
 | `.` (point) | attendre un tour |
 | `f` | lancer une boule de feu (8 mana, dégâts de zone autour de la cible) |
 | `g` ou `>` | descendre l'escalier (se tenir sur la case `>`) |
+| `G` ou `<` | remonter l'escalier (se tenir sur la case `<`) |
 | `i` | inventaire / équipement |
 | `?` | aide intégrée |
 | `Q` (majuscule) ou `esc` | retour au menu (abandon de la partie) |
@@ -45,20 +46,28 @@ go build -o donjon-cafeine .
 ## Règles du jeu
 
 - **10 étages** générés procéduralement (salles reliées par des couloirs), du plus
-  facile au plus profond.
+  facile au plus profond. **Escalier bidirectionnel** : `>` pour descendre, `<` pour
+  remonter (les étages sont déterministes : remonter puis redescendre régénère la
+  même carte).
 - **Fog of war** : tu ne vois que les cases dans ta portée de vue (8 cases) ;
   le reste de ce que tu as exploré reste visible en atténué, le reste est noir.
 - **Combat au tour par tour** : dégâts = `max(1, attaque − défense)`, variance de
   ±20 %, **coup critique** (×2) avec 10 % de chance.
-- **Monstres** : rat géant (fuit quand il est blessé), gobelin, squelette — et le
-  **Seigneur des Tasses** au 10e étage, qui te flaire dans un rayon de 12 cases
-  même sans te voir.
+- **Monstres** (7 types répartis par profondeur) : rat géant (fuit quand il est
+  blessé), **slime** (fuit tôt), gobelin, **chauve-souris** (détection longue),
+  squelette, **golem de pierre** (très résistant, ne fuit jamais) — et le
+  **Seigneur des Tasses** au 10e étage (120 PV, 11 ATK, 5 DEF, rage sous 50 % PV),
+  qui te flaire dans un rayon de 12 cases même sans te voir.
+- **Détection des monstres** : un monstre te détecte s'il est à portée **et** a une
+  ligne de vue dégagée sur toi (les murs bloquent la détection). Le boss fait
+  exception : il te flaire à travers les murs.
 - **IA ennemie** : patrouille quand le joueur n'est pas détecté, poursuite par
   plus court chemin (BFS) quand il l'est, fuite pour les lâches.
 - **Objets** (ramassage automatique en marchant dessus) : pièces d'or, potions de
   soin et de mana, armes et armures (tu gardes automatiquement la meilleure).
-- **Progression** : XP à chaque kill, montée de niveau (max 20) : +8 PV max,
-  +1 ATK, +1 DEF, +4 mana max.
+- **Progression** : XP à chaque kill avec **variance ±20 %** (min-max déterministe),
+  paliers de niveau à `30×n` XP cumulée, montée de niveau (max 20) : +10 PV max,
+  +1 ATK, +1 DEF, +4 mana max. PV de départ : 40.
 - **Mana** : la boule de feu coûte 8 mana ; +1 mana tous les 3 tours.
 - **Victoire** : tuer le Seigneur des Tasses au 10e étage.
 - **Défaite** : PV à 0.
@@ -91,7 +100,8 @@ go test ./...
 
 - `internal/game` : tests unitaires (RNG déterministe, génération procédurale et
   connexité, FOV/fog of war, combat, IA, progression, transitions victoire/défaite,
-  dimensions d'étage `NewStateSized`/`ClampWorldSize`, registre ECS/SOA `Entities`)
+  dimensions d'étage `NewStateSized`/`ClampWorldSize`, registre ECS/SOA `Entities`,
+  équilibrage : templates monstres, rollXP borné, Ascend, étages stables RNG dérivé)
   + tests d'intégration (parties complètes en bot sur 20 graines, victoire et
   défaite de bout en bout).
 - `internal/score` : persistance (ajout, tri, top 10, fichier absent/corrompu).
@@ -105,16 +115,16 @@ go test ./...
 main.go               point d'entrée (CLI : --seed, --demo, --max-turns)
 internal/game/        moteur de jeu pur — AUCUNE dépendance TUI, testé unitairement
   rng.go              RNG déterministe (seedable)
-  world.go            génération procédurale d'étage (salles + couloirs + escalier)
+  world.go            génération procédurale d'étage (salles + couloirs + escaliers >/<)
   fov.go              champ de vision (rayons de Bresenham) + fog of war
   ecs.go              registre ECS/SOA des monstres (tableaux parallèles par composant)
-  entity.go           joueur, monstres, boss (stats, glyphes, templates)
+  entity.go           joueur, monstres (7 types), boss (stats, glyphes, templates)
   combat.go           résolution d'attaque (défense, variance, critiques)
-  ai.go               IA ennemie + pathfinding BFS (par EntityID)
+  ai.go               IA ennemie + pathfinding BFS + détection par ligne de vue
   items.go            objets (or, potions, armes, armures)
-  progression.go      XP, niveaux, attaque/défense effectives
-  state.go            état de partie, tours, sorts, victoire/défaite, score, journal
-  auto.go             bot AutoPlay (mode --demo et tests d'intégration)
+  progression.go      XP (paliers 30*n, variance ±20%), niveaux, attaque/défense effectives
+  state.go            état de partie, tours, sorts, victoire/défaite, score, journal, Ascend()
+  auto.go             bot AutoPlay (mode --demo et tests d'intégration, farm par étage)
 internal/tui/         interface terminal (BubbleTea + Lipgloss), plein écran
   model.go update.go view.go   modèle MVC BubbleTea + viewport (caméra centrée)
   keys.go             ZQSD/HJKL/flèches → déplacements

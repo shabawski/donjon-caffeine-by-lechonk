@@ -14,6 +14,7 @@ var (
 	styleWall     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	styleFloor    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	styleStairs   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
+	styleStairsUp = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))
 	styleDim      = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 	styleHP       = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	styleMana     = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
@@ -28,6 +29,9 @@ var enemyStyles = map[game.EntityKind]lipgloss.Style{
 	game.KindRat:      lipgloss.NewStyle().Foreground(lipgloss.Color("174")),
 	game.KindGoblin:   lipgloss.NewStyle().Foreground(lipgloss.Color("208")),
 	game.KindSkeleton: lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
+	game.KindSlime:    lipgloss.NewStyle().Foreground(lipgloss.Color("46")),
+	game.KindBat:      lipgloss.NewStyle().Foreground(lipgloss.Color("92")),
+	game.KindGolem:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("244")),
 	game.KindBoss:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("201")),
 }
 

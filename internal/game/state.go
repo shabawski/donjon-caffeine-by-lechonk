@@ -56,6 +56,7 @@ type State struct {
 	CauseOfDeath string
 	worldWidth   int // dimensions d'étage, conservées entre les étages
 	worldHeight  int
+	floorTurns   int // tours passés sur l'étage courant (reset à chaque étage)
 }
 
 // NewState crée une nouvelle partie avec la graine donnée et génère l'étage 1
@@ -88,24 +89,29 @@ func NewStateSized(seed int64, width, height int) *State {
 }
 
 // startFloor génère un étage et y place le joueur, les monstres et les objets.
+// La génération utilise un RNG dérivé de la graine et de la profondeur
+// (seed*1000 + depth) : remonter puis redescendre régénère exactement le
+// même étage. Le RNG global (s.RNG) reste utilisé pour le gameplay (combat, IA).
 func (s *State) startFloor(depth int) {
-	s.World = GenerateWorld(s.RNG, depth, s.worldWidth, s.worldHeight)
+	floorRNG := NewRNG(s.Seed*1000 + int64(depth))
+	s.World = GenerateWorld(floorRNG, depth, s.worldWidth, s.worldHeight)
 	s.FOV = NewFOV(s.World.Width * s.World.Height)
-	px, py, _ := s.World.RandomFloor(s.RNG)
+	px, py, _ := s.World.RandomFloor(floorRNG)
 	s.Player.X, s.Player.Y = px, py
-	s.spawnEnemies(depth)
-	s.spawnItems(depth)
+	s.spawnEnemies(floorRNG, depth)
+	s.spawnItems(floorRNG, depth)
 	if depth == MaxDepth {
-		s.spawnBoss()
+		s.spawnBoss(floorRNG)
 	}
 	ComputeFOV(s.World, s.FOV, px, py, PlayerViewRange)
 	s.Logf("🌀 Étage %d/%d — bonne descente !", depth, MaxDepth)
 	if depth == 1 {
 		s.Logf("Le Seigneur des Tasses a volé tout le café. Trouve-le au étage %d !", MaxDepth)
 	}
+	s.floorTurns = 0
 }
 
-func (s *State) spawnEnemies(depth int) {
+func (s *State) spawnEnemies(rng *RNG, depth int) {
 	s.Entities.Reset()
 	kinds := EnemyKindsForDepth(depth)
 	count := 3 + depth
@@ -113,19 +119,19 @@ func (s *State) spawnEnemies(depth int) {
 		count = 12
 	}
 	for i := 0; i < count; i++ {
-		x, y, ok := s.World.RandomFloor(s.RNG)
+		x, y, ok := s.World.RandomFloor(rng)
 		if !ok || s.Occupied(x, y) {
 			continue
 		}
-		t := enemyTemplate(kinds[s.RNG.Intn(len(kinds))])
+		t := enemyTemplate(kinds[rng.Intn(len(kinds))])
 		t.X, t.Y = x, y
 		s.Entities.Spawn(t)
 	}
 }
 
 // spawnBoss invoque le boss final sur le dernier étage.
-func (s *State) spawnBoss() {
-	x, y, ok := s.World.RandomFloor(s.RNG)
+func (s *State) spawnBoss(rng *RNG) {
+	x, y, ok := s.World.RandomFloor(rng)
 	if !ok {
 		return
 	}
@@ -135,15 +141,15 @@ func (s *State) spawnBoss() {
 	s.Logf("👑 Le Seigneur des Tasses t'attend... avec TON café !")
 }
 
-func (s *State) spawnItems(depth int) {
+func (s *State) spawnItems(rng *RNG, depth int) {
 	s.Items = nil
-	count := RollItemCount(s.RNG, depth)
+	count := RollItemCount(rng, depth)
 	for i := 0; i < count; i++ {
-		x, y, ok := s.World.RandomFloor(s.RNG)
+		x, y, ok := s.World.RandomFloor(rng)
 		if !ok || s.Occupied(x, y) || s.ItemAt(x, y) != nil {
 			continue
 		}
-		s.Items = append(s.Items, RollItem(s.RNG, x, y, depth))
+		s.Items = append(s.Items, RollItem(rng, x, y, depth))
 	}
 }
 
@@ -234,9 +240,10 @@ func (s *State) playerAttack(id EntityID) {
 		s.Logf("Tu frappes le %s : -%d PV", e.Name[i], dmg)
 	}
 	if killed {
-		s.Logf("☠️ Le %s s'effondre ! (+%d XP)", e.Name[i], e.XPValue[i])
+		xp := s.rollXP(e.XPValue[i])
+		s.Logf("☠️ Le %s s'effondre ! (+%d XP)", e.Name[i], xp)
 		s.Player.Kills++
-		s.Player.GainXP(s, e.XPValue[i])
+		s.Player.GainXP(s, xp)
 		if e.Kind[i] == KindBoss {
 			s.victory()
 		}
@@ -244,9 +251,25 @@ func (s *State) playerAttack(id EntityID) {
 	}
 }
 
+// rollXP applique une variance de ±20% à l'XP de base d'un monstre tué.
+// Progression déterministe (même seed = mêmes rolls) mais avec du min-max :
+// un rat vaut entre 4 et 6 XP au lieu de 5 fixe.
+func (s *State) rollXP(base int) int {
+	if base <= 0 {
+		return 0
+	}
+	variance := 1 + (s.RNG.Float()*0.4 - 0.2)
+	xp := int(float64(base) * variance)
+	if xp < 1 {
+		xp = 1
+	}
+	return xp
+}
+
 // endPlayerTurn termine le tour du joueur : régénération, FOV, puis tour des monstres.
 func (s *State) endPlayerTurn() {
 	s.Player.Turns++
+	s.floorTurns++
 	s.Turn = s.Player.Turns
 	if s.Player.Turns%ManaRegenEvery == 0 && s.Player.Mana < s.Player.MaxMana {
 		s.Player.Mana++
@@ -316,6 +339,25 @@ func (s *State) Descend() bool {
 		return false
 	}
 	s.startFloor(s.World.Depth + 1)
+	return true
+}
+
+// Ascend fait remonter le joueur d'un étage s'il se tient sur l'escalier montant.
+// L'étage régénéré est identique (RNG dérivé seed*1000+depth) : les monstres
+// tués reviennent, les objets ramassés réapparaissent.
+func (s *State) Ascend() bool {
+	if s.Phase != PhasePlaying {
+		return false
+	}
+	if !s.World.HasStairsUp {
+		s.Logf("Pas d'escalier montant ici (tu es au premier étage).")
+		return false
+	}
+	if s.Player.X != s.World.StairsUpX || s.Player.Y != s.World.StairsUpY {
+		s.Logf("L'escalier montant est ailleurs sur cet étage.")
+		return false
+	}
+	s.startFloor(s.World.Depth - 1)
 	return true
 }
 
@@ -393,9 +435,10 @@ func (s *State) CastFireball(lastDX, lastDY int) bool {
 		hit = true
 		s.Logf("La boule de feu frappe le %s : -%d PV", e.Name[i], dmg)
 		if e.HP[i] <= 0 {
-			s.Logf("☠️ Le %s s'effondre ! (+%d XP)", e.Name[i], e.XPValue[i])
+			xp := s.rollXP(e.XPValue[i])
+			s.Logf("☠️ Le %s s'effondre ! (+%d XP)", e.Name[i], xp)
 			s.Player.Kills++
-			s.Player.GainXP(s, e.XPValue[i])
+			s.Player.GainXP(s, xp)
 			if e.Kind[i] == KindBoss {
 				s.victory()
 			}

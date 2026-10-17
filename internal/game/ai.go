@@ -72,11 +72,7 @@ func (s *State) EnemyTurn(id EntityID) {
 	i := int(id)
 	px, py := s.Player.X, s.Player.Y
 	dist := chebDist(e.X[i], e.Y[i], px, py)
-	playerVisible := s.FOV.Visible[py*s.World.Width+px]
-	detected := playerVisible && dist <= e.DetectRange[i]
-	if e.Kind[i] == KindBoss && dist <= e.DetectRange[i] {
-		detected = true // le boss flaire le café du joueur de loin
-	}
+	detected := s.detectsPlayer(id)
 	if !detected {
 		// Patrouille : un déplacement sur deux vers une case voisine au hasard.
 		if s.RNG.Chance(0.5) {
@@ -91,7 +87,7 @@ func (s *State) EnemyTurn(id EntityID) {
 	if dist == 1 {
 		atk := e.Attack[i]
 		if e.Kind[i] == KindBoss && float64(e.HP[i])/float64(e.MaxHP[i]) < 0.5 {
-			atk += 2 // le boss se met en colère quand il est blessé
+			atk += 3 // le boss se met en rage quand il est à moitié blessé
 		}
 		def := s.Player.EffectiveDefense()
 		dmg, crit, killed := Attack(s.RNG, atk, def, &s.Player.HP)
@@ -113,6 +109,24 @@ func (s *State) EnemyTurn(id EntityID) {
 		return
 	}
 	s.moveEnemyTo(id, nx, ny)
+}
+
+// detectsPlayer indique si le monstre détecte le joueur : le joueur est dans
+// la portée de détection (distance de Chebyshev) ET une ligne de vue dégagée
+// existe entre le monstre et le joueur (aucun mur sur le trajet).
+// Le boss fait exception : il flaire le café du joueur à travers les murs.
+func (s *State) detectsPlayer(id EntityID) bool {
+	e := s.Entities
+	i := int(id)
+	px, py := s.Player.X, s.Player.Y
+	dist := chebDist(e.X[i], e.Y[i], px, py)
+	if dist > e.DetectRange[i] {
+		return false
+	}
+	if e.Kind[i] == KindBoss {
+		return true // le boss flaire le café du joueur de loin, murs ou pas
+	}
+	return s.hasLineOfSight(e.X[i], e.Y[i], px, py)
 }
 
 // moveEnemyRandom déplace le monstre vers une case voisine franchissable au hasard.

@@ -7,6 +7,7 @@ const (
 	TileWall Tile = iota
 	TileFloor
 	TileStairs
+	TileStairsUp
 )
 
 // Glyph renvoie le caractère représentant la tuile.
@@ -16,6 +17,8 @@ func (t Tile) Glyph() rune {
 		return '.'
 	case TileStairs:
 		return '>'
+	case TileStairsUp:
+		return '<'
 	default:
 		return '#'
 	}
@@ -53,7 +56,10 @@ type World struct {
 	Tiles         []Tile
 	StairsX       int
 	StairsY       int
-	HasStairs     bool // false au dernier étage (le boss y campe à la place)
+	HasStairs     bool // escalier vers le bas (false au dernier étage)
+	StairsUpX     int
+	StairsUpY     int
+	HasStairsUp   bool // escalier vers le haut (false au premier étage)
 }
 
 // InBounds indique si (x, y) est dans la carte.
@@ -79,7 +85,7 @@ func (w *World) Set(x, y int, t Tile) {
 // IsWalkable indique si une case est franchissable (sol ou escalier).
 func (w *World) IsWalkable(x, y int) bool {
 	switch w.At(x, y) {
-	case TileFloor, TileStairs:
+	case TileFloor, TileStairs, TileStairsUp:
 		return true
 	default:
 		return false
@@ -117,7 +123,8 @@ func (r room) intersects(o room) bool {
 }
 
 // GenerateWorld crée un étage procédural : des salles disjointes reliées par
-// des couloirs en L, plus un escalier vers le bas (absent au dernier étage).
+// des couloirs en L, plus un escalier vers le bas (absent au dernier étage)
+// et un escalier vers le haut (absent au premier étage).
 func GenerateWorld(rng *RNG, depth, width, height int) *World {
 	w := &World{Width: width, Height: height, Depth: depth, Tiles: make([]Tile, width*height)}
 	for i := range w.Tiles {
@@ -132,6 +139,13 @@ func GenerateWorld(rng *RNG, depth, width, height int) *World {
 		}
 	}
 
+	if depth > 1 {
+		// Escalier montant dans la première salle (absent au premier étage).
+		first := rooms[0]
+		w.StairsUpX, w.StairsUpY = first.center()
+		w.Set(w.StairsUpX, w.StairsUpY, TileStairsUp)
+		w.HasStairsUp = true
+	}
 	if depth < MaxDepth {
 		last := rooms[len(rooms)-1]
 		w.StairsX, w.StairsY = last.center()

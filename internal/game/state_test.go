@@ -74,8 +74,10 @@ func TestMovePlayerAttacksEnemy(t *testing.T) {
 	if s.Player.Kills != 1 {
 		t.Fatalf("kills attendu 1, got %d", s.Player.Kills)
 	}
-	if s.Player.XP != xpValue {
-		t.Fatalf("XP attendu %d, got %d", xpValue, s.Player.XP)
+	// XP avec variance ±20% (rollXP) : rat = 5 XP de base → entre 4 et 6.
+	_ = xpValue
+	if s.Player.XP < 4 || s.Player.XP > 6 {
+		t.Fatalf("XP attendu entre 4 et 6 (variance ±20%% de 5), got %d", s.Player.XP)
 	}
 	// Le monstre mort est retiré au tour suivant des monstres.
 	if s.Entities.Len() != 0 {
@@ -106,7 +108,7 @@ func TestPickupPotionHeals(t *testing.T) {
 
 func TestPickupPotionClampsToMaxHP(t *testing.T) {
 	s := newTestState(1, 10, 10)
-	s.Player.HP = 28
+	s.Player.HP = 35 // MaxHP = 40 : 35 + 10 = 45 → clamp à 40
 	s.Items = []*Item{{Kind: ItemPotionHP, Name: "potion de soin", Glyph: '!', X: 2, Y: 1, Power: 10}}
 	s.MovePlayer(1, 0)
 	if s.Player.HP != s.Player.MaxHP {

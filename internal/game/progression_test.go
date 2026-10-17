@@ -3,7 +3,8 @@ package game
 import "testing"
 
 func TestXPNeededForLevel(t *testing.T) {
-	cases := map[int]int{1: 0, 2: 20, 3: 60, 4: 120, 5: 200, 6: 300}
+	// Paliers 30*n : niv2=30, niv3=90, niv4=180, niv5=300, niv6=450
+	cases := map[int]int{1: 0, 2: 30, 3: 90, 4: 180, 5: 300, 6: 450}
 	for lvl, want := range cases {
 		if got := XPNeededForLevel(lvl); got != want {
 			t.Errorf("XPNeededForLevel(%d) = %d, attendu %d", lvl, got, want)
@@ -14,12 +15,12 @@ func TestXPNeededForLevel(t *testing.T) {
 func TestGainXPLevelUp(t *testing.T) {
 	s := newTestState(1, 10, 10)
 	p := &s.Player
-	p.GainXP(s, 20)
+	p.GainXP(s, 30) // palier niveau 2 = 30 XP
 	if p.Level != 2 {
 		t.Fatalf("niveau attendu 2, got %d", p.Level)
 	}
-	if p.MaxHP != 38 || p.HP != 38 {
-		t.Errorf("PV attendu 38/38, got %d/%d", p.HP, p.MaxHP)
+	if p.MaxHP != 50 || p.HP != 50 {
+		t.Errorf("PV attendu 50/50, got %d/%d", p.HP, p.MaxHP)
 	}
 	if p.Attack != 6 {
 		t.Errorf("attaque attendue 6, got %d", p.Attack)
@@ -35,7 +36,7 @@ func TestGainXPLevelUp(t *testing.T) {
 func TestGainXPMultipleLevels(t *testing.T) {
 	s := newTestState(1, 10, 10)
 	p := &s.Player
-	p.GainXP(s, 60) // paliers 20 (niv 2) + 40 (niv 3)
+	p.GainXP(s, 90) // paliers 30 (niv 2) + 60 (niv 3)
 	if p.Level != 3 {
 		t.Fatalf("niveau attendu 3, got %d", p.Level)
 	}
@@ -52,12 +53,12 @@ func TestGainXPCapsAtLevel20(t *testing.T) {
 func TestGainXPNoLevelUpBelowThreshold(t *testing.T) {
 	s := newTestState(1, 10, 10)
 	p := &s.Player
-	p.GainXP(s, 19)
+	p.GainXP(s, 29) // sous le palier 30 (niveau 2)
 	if p.Level != 1 {
 		t.Fatalf("pas de montée de niveau sous le palier, got %d", p.Level)
 	}
-	if p.XP != 19 {
-		t.Fatalf("XP cumulé attendu 19, got %d", p.XP)
+	if p.XP != 29 {
+		t.Fatalf("XP cumulé attendu 29, got %d", p.XP)
 	}
 }
 
