@@ -68,7 +68,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	m := tui.New(gc, snap)
+	m := tui.New(gc, snap, *connect != "")
 	if err := m.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "Erreur:", err)
 		os.Exit(1)

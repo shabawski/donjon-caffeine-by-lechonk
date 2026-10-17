@@ -52,17 +52,30 @@ type Model struct {
 	pendingInput bool   // un input a été envoyé, le snapshot de réponse n'est pas encore reçu (tests)
 }
 
-// New crée le modèle sur un client connecté (démarrage sur le menu).
-// Le snapshot initial a déjà été reçu par le main. Les dimensions par défaut
-// (80x24) sont remplacées par le premier WindowSizeMsg envoyé par BubbleTea.
-func New(c client.GameClient, snap *game.Snapshot) *Model {
-	m := &Model{client: c, snapshot: snap, screen: screenMenu, lastDX: 1, width: 80, height: 24}
+// New crée le modèle sur un client connecté. Si directPlay est true (ex:
+// --connect host:port), le modèle démarre directement en jeu (screenPlaying) ;
+// sinon il démarre sur le menu (solo : l'utilisateur choisit solo/multi/scores).
+// Les dimensions par défaut (80x24) sont remplacées par le premier
+// WindowSizeMsg envoyé par BubbleTea.
+func New(c client.GameClient, snap *game.Snapshot, directPlay bool) *Model {
+	m := &Model{client: c, snapshot: snap, lastDX: 1, width: 80, height: 24}
+	if directPlay {
+		m.screen = screenPlaying
+	} else {
+		m.screen = screenMenu
+	}
 	m.updateViewport()
 	return m
 }
 
-// Init ne lance aucune commande au démarrage.
-func (m *Model) Init() tea.Cmd { return nil }
+// Init lance la boucle de lecture des snapshots si on démarre directement en
+// jeu (--connect). Sur le menu, aucune commande n'est lancée.
+func (m *Model) Init() tea.Cmd {
+	if m.screen == screenPlaying {
+		return m.waitSnapshot()
+	}
+	return nil
+}
 
 // Run lance la boucle BubbleTea en plein écran alternatif.
 func (m *Model) Run() error {

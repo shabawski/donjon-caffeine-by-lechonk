@@ -52,6 +52,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case newGameMsg:
+		// Ferme l'ancien client (évite les joueurs fantômes côté serveur quand
+		// on reconnecte via le menu après un --connect, ou qu'on relance).
+		if m.client != nil {
+			m.client.Close()
+		}
 		m.client = msg.client
 		m.snapshot = msg.snapshot
 		m.screen = screenPlaying

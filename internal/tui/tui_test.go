@@ -14,10 +14,11 @@ import (
 )
 
 // newTestModel crée un Model adossé à un LocalClient (serveur solo embarqué).
+// directPlay=false : démarre sur le menu (comme en solo sans --connect).
 func newTestModel(seed int64) (*Model, *client.LocalClient) {
 	c := client.NewLocalClient(seed, game.DefaultWidth, game.DefaultHeight)
 	snap, _ := c.NextSnapshot()
-	return New(c, snap), c
+	return New(c, snap, false), c
 }
 
 // press envoie une touche au modèle et consomme le snapshot de réponse si un
@@ -54,14 +55,15 @@ func press(m *Model, key tea.KeyMsg) *Model {
 
 // mockClient retourne toujours le même snapshot (pour les tests d'écran).
 type mockClient struct {
-	snap *game.Snapshot
+	snap   *game.Snapshot
+	closed bool // true si Close() a été appelé (test joueurs fantômes)
 }
 
 func (c *mockClient) Connect() error                        { return nil }
 func (c *mockClient) SendInput(netproto.InputPayload) error { return nil }
 func (c *mockClient) NextSnapshot() (*game.Snapshot, error) { return c.snap, nil }
 func (c *mockClient) DrainSnapshots()                       {}
-func (c *mockClient) Close() error                          { return nil }
+func (c *mockClient) Close() error                          { c.closed = true; return nil }
 
 func TestViewMenuContainsTitle(t *testing.T) {
 	m, _ := newTestModel(42)
@@ -274,7 +276,7 @@ func TestDeathTriggersGameOverAndSavesScore(t *testing.T) {
 	s.Player.HP = 0
 	s.PlayerDeath()
 	snap := s.Snapshot()
-	m := New(&mockClient{snap: snap}, snap)
+	m := New(&mockClient{snap: snap}, snap, false)
 	m.screen = screenPlaying
 	m.afterSnapshot() // simule la réception du snapshot
 	if m.screen != screenGameOver {
@@ -306,7 +308,7 @@ func TestVictoryScreen(t *testing.T) {
 	s.Player.X, s.Player.Y = s.Entities.X[0], s.Entities.Y[0]
 	s.MovePlayer(0, 0) // attaque le boss → victoire
 	snap := s.Snapshot()
-	m := New(&mockClient{snap: snap}, snap)
+	m := New(&mockClient{snap: snap}, snap, false)
 	m.screen = screenPlaying
 	m.afterSnapshot()
 	if m.screen != screenGameOver {
@@ -386,7 +388,7 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
-// TestShopScreenOuvrePrèsDuMarchand vérifie que m ouvre le shop quand le
+// TestShopScreenOuvrePresDuMarchand vérifie que m ouvre le shop quand le
 // joueur est adjacent au marchand (snapshot avec marchand à côté).
 func TestShopScreenOuvrePresDuMarchand(t *testing.T) {
 	m, c := newTestModel(42)
@@ -402,5 +404,49 @@ func TestShopScreenOuvrePresDuMarchand(t *testing.T) {
 	}
 	if v := m.View(); !strings.Contains(v, "Marchand") {
 		t.Fatal("l'écran marchand doit s'afficher")
+	}
+}
+
+// TestNewGameMsgFermeAncienClient — RÉGRESSION (17/10 16:44) : newGameMsg
+// doit fermer l'ancien client pour éviter les joueurs fantômes côté serveur
+// (quand on reconnecte via le menu après un --connect, ou qu'on relance).
+func TestNewGameMsgFermeAncienClient(t *testing.T) {
+	snap := game.NewState(42).Snapshot()
+	old := &mockClient{snap: snap}
+	m := New(old, snap, false)
+	newC := &mockClient{snap: snap}
+	updated, _ := m.Update(newGameMsg{client: newC, snapshot: snap})
+	m = updated.(*Model)
+	if !old.closed {
+		t.Fatal("newGameMsg doit fermer l'ancien client (évite les joueurs fantômes)")
+	}
+	if m.client != client.GameClient(newC) {
+		t.Fatal("le nouveau client doit remplacer l'ancien")
+	}
+}
+
+// TestNewDirectPlayVaEnJeu — RÉGRESSION (17/10 16:44) : New(..., true) démarre
+// directement en jeu (screenPlaying), pas sur le menu. Utilisé par --connect.
+func TestNewDirectPlayVaEnJeu(t *testing.T) {
+	snap := game.NewState(42).Snapshot()
+	m := New(&mockClient{snap: snap}, snap, true)
+	if m.screen != screenPlaying {
+		t.Fatalf("directPlay=true doit démarrer en jeu, got screen=%v", m.screen)
+	}
+	// Init doit lancer waitSnapshot (boucle de lecture active).
+	if cmd := m.Init(); cmd == nil {
+		t.Fatal("Init doit lancer waitSnapshot en screenPlaying (directPlay)")
+	}
+}
+
+// TestNewSansDirectPlayVaAuMenu vérifie que New(..., false) démarre sur le menu.
+func TestNewSansDirectPlayVaAuMenu(t *testing.T) {
+	snap := game.NewState(42).Snapshot()
+	m := New(&mockClient{snap: snap}, snap, false)
+	if m.screen != screenMenu {
+		t.Fatalf("directPlay=false doit démarrer sur le menu, got screen=%v", m.screen)
+	}
+	if cmd := m.Init(); cmd != nil {
+		t.Fatal("Init ne doit rien lancer sur le menu")
 	}
 }
