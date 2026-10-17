@@ -27,7 +27,7 @@ go build -o donjon-cafeine .
 ./donjon-cafeine
 ```
 
-### Serveur dédié (TCP)
+### Serveur dédié (TCP) — multijoueur
 
 ```sh
 go run ./cmd/coffee-dungeon-server                  # écoute sur :27015
@@ -35,15 +35,22 @@ go run ./cmd/coffee-dungeon-server --addr :8080     # port personnalisé
 go run ./cmd/coffee-dungeon-server --seed 42        # partie reproductible
 ```
 
-Puis connecte-toi depuis un autre terminal / machine :
+Puis connecte-toi depuis un autre terminal / machine (menu → **Multijoueur (TCP)**,
+ou en CLI) :
 
 ```sh
 go run . --connect <host>:27015
 ```
 
+**Multijoueur** : plusieurs joueurs partagent le même donjon. Chaque joueur a
+son **propre champ de vision** (FOV) — le serveur envoie à chaque client un
+snapshot personnalisé. Les monstres gèrent leur **focus** côté serveur : ils
+poursuivent le joueur le plus proche détecté (portée + ligne de vue).
+Les autres joueurs apparaissent sur la carte avec le glyphe `¶`.
+
 > Pour le déploiement sur un VPS : compile le serveur (`go build -o coffee-dungeon-server ./cmd/coffee-dungeon-server`),
 > lance-le sur le VPS, ouvre le port (27015) dans le firewall, et connecte les
-> clients avec `--connect <ip-vps>:27015`.
+> clients avec `--connect <ip-vps>:27015` ou via le menu « Multijoueur (TCP) ».
 
 ## Commandes
 
@@ -184,8 +191,11 @@ Le serveur détient l'état autoritaire (`game.State`). Le client reçoit des
 monstres, FOV, journal) et rend depuis ce snapshot. Le protocole est du JSON
 délimités par des sauts de ligne (`internal/net/proto.go`).
 
-> Le multijoueur complet (plusieurs joueurs, FOV par joueur, focus des monstres
-> côté serveur) est en préparation (bloc 6).
+En **multijoueur**, le serveur gère plusieurs joueurs (`players map[int]*game.Player`)
+avec un **FOV par joueur** : chaque client reçoit un snapshot personnalisé
+(position + champ de vision). Les monstres gèrent leur **focus** côté serveur
+(`focusPlayer` dans `internal/game/ai.go`) : ils ciblent le joueur le plus
+proche détecté (portée + ligne de vue).
 
 ### Architecture du moteur : ECS + SOA
 

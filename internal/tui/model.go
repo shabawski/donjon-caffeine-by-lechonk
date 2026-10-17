@@ -18,6 +18,7 @@ const (
 	screenScores
 	screenGameOver
 	screenShop
+	screenConnect
 )
 
 // hudWidth est la largeur fixe du panneau HUD affiché à droite de la carte.
@@ -30,22 +31,24 @@ const hudWidth = 40
 // Le rendu plein écran passe par un viewport : une caméra centrée sur le
 // joueur, recalculée à chaque resize et à chaque snapshot reçu.
 type Model struct {
-	client     client.GameClient // solo (channels) ou multi (TCP)
-	snapshot   *game.Snapshot    // dernier état reçu du serveur
-	screen     screen
-	width      int
-	height     int
-	viewX      int // coin supérieur gauche du viewport (coordonnées monde)
-	viewY      int
-	viewW      int // dimensions du viewport en cellules
-	viewH      int
-	lastDX     int
-	lastDY     int
-	menuCursor int
-	scoreSaved bool
-	invCursor  int // curseur dans l'inventaire
-	shopCursor int // curseur dans l'écran marchand
-	shopTab    int // onglet marchand : 0 = achat, 1 = vente
+	client       client.GameClient // solo (channels) ou multi (TCP)
+	snapshot     *game.Snapshot    // dernier état reçu du serveur
+	screen       screen
+	width        int
+	height       int
+	viewX        int // coin supérieur gauche du viewport (coordonnées monde)
+	viewY        int
+	viewW        int // dimensions du viewport en cellules
+	viewH        int
+	lastDX       int
+	lastDY       int
+	menuCursor   int
+	scoreSaved   bool
+	invCursor    int    // curseur dans l'inventaire
+	shopCursor   int    // curseur dans l'écran marchand
+	shopTab      int    // onglet marchand : 0 = achat, 1 = vente
+	connectInput string // adresse host:port en cours de saisie (écran connexion)
+	connectErr   string // dernière erreur de connexion (affichée sous le champ)
 }
 
 // New crée le modèle sur un client connecté (démarrage sur le menu).

@@ -60,19 +60,18 @@ func BFSNextStep(w *World, blocked func(x, y int) bool, fromX, fromY, toX, toY i
 	return cx, cy, true
 }
 
-// EnemyTurn fait agir un monstre pour ce tour : patrouille si le joueur n'est
-// pas détecté, fuite si le monstre est faible et blessé, chasse (BFS) sinon,
+// EnemyTurn fait agir un monstre pour ce tour : patrouille si aucun joueur
+// n'est détecté, fuite si le monstre est faible et blessé, chasse (BFS) sinon,
 // attaque au corps à corps si adjacent.
 // Le monstre est identifié par son EntityID dans le registre SOA s.Entities.
+// En multijoueur, le monstre cible le joueur le plus proche détecté (focus).
 func (s *State) EnemyTurn(id EntityID) {
 	e := s.Entities
 	if !e.IsAlive(id) {
 		return
 	}
 	i := int(id)
-	px, py := s.Player.X, s.Player.Y
-	dist := chebDist(e.X[i], e.Y[i], px, py)
-	detected := s.detectsPlayer(id)
+	tx, ty, detected := s.focusPlayer(id)
 	if !detected {
 		// Patrouille : un déplacement sur deux vers une case voisine au hasard.
 		if s.RNG.Chance(0.5) {
@@ -80,30 +79,38 @@ func (s *State) EnemyTurn(id EntityID) {
 		}
 		return
 	}
+	dist := chebDist(e.X[i], e.Y[i], tx, ty)
 	if e.FleeBelow[i] > 0 && float64(e.HP[i])/float64(e.MaxHP[i]) < e.FleeBelow[i] {
-		s.moveEnemyAway(id, px, py)
+		s.moveEnemyAway(id, tx, ty)
 		return
 	}
 	if dist == 1 {
+		// Attaque le joueur focus (le plus proche détecté).
+		target := s.playerAt(tx, ty)
+		if target == nil {
+			return
+		}
 		atk := e.Attack[i]
 		if e.Kind[i] == KindBoss && float64(e.HP[i])/float64(e.MaxHP[i]) < 0.5 {
 			atk += 3 // le boss se met en rage quand il est à moitié blessé
 		}
-		def := s.Player.EffectiveDefense()
-		dmg, crit, killed := Attack(s.RNG, atk, def, &s.Player.HP)
+		def := target.EffectiveDefense()
+		dmg, crit, killed := Attack(s.RNG, atk, def, &target.HP)
 		if crit {
-			s.Logf("💥 Le %s te porte un coup critique ! -%d PV (%d/%d)", e.Name[i], dmg, s.Player.HP, s.Player.MaxHP)
+			s.Logf("💥 Le %s te porte un coup critique ! -%d PV (%d/%d)", e.Name[i], dmg, target.HP, target.MaxHP)
 		} else {
-			s.Logf("Le %s t'attaque : -%d PV (%d/%d)", e.Name[i], dmg, s.Player.HP, s.Player.MaxHP)
+			s.Logf("Le %s t'attaque : -%d PV (%d/%d)", e.Name[i], dmg, target.HP, target.MaxHP)
 		}
 		if killed {
 			s.CauseOfDeath = "tué par un(e) " + e.Name[i]
-			s.PlayerDeath()
+			if target == &s.Player {
+				s.PlayerDeath()
+			}
 		}
 		return
 	}
 	blocked := func(x, y int) bool { return s.OccupiedByEnemy(x, y) != InvalidEntity }
-	nx, ny, ok := BFSNextStep(s.World, blocked, e.X[i], e.Y[i], px, py)
+	nx, ny, ok := BFSNextStep(s.World, blocked, e.X[i], e.Y[i], tx, ty)
 	if !ok {
 		s.moveEnemyRandom(id)
 		return
@@ -111,22 +118,37 @@ func (s *State) EnemyTurn(id EntityID) {
 	s.moveEnemyTo(id, nx, ny)
 }
 
-// detectsPlayer indique si le monstre détecte le joueur : le joueur est dans
-// la portée de détection (distance de Chebyshev) ET une ligne de vue dégagée
-// existe entre le monstre et le joueur (aucun mur sur le trajet).
-// Le boss fait exception : il flaire le café du joueur à travers les murs.
-func (s *State) detectsPlayer(id EntityID) bool {
+// focusPlayer retourne la position du joueur le plus proche détecté par le
+// monstre (focus). Détection : portée Chebyshev + ligne de vue dégagée
+// (le boss flaire à travers les murs). En solo, c'est toujours le joueur local.
+func (s *State) focusPlayer(id EntityID) (int, int, bool) {
 	e := s.Entities
 	i := int(id)
-	px, py := s.Player.X, s.Player.Y
-	dist := chebDist(e.X[i], e.Y[i], px, py)
-	if dist > e.DetectRange[i] {
-		return false
+	bestDist := 1 << 30
+	bx, by := 0, 0
+	found := false
+	for _, p := range s.AllPlayers() {
+		dist := chebDist(e.X[i], e.Y[i], p.X, p.Y)
+		if dist > e.DetectRange[i] {
+			continue
+		}
+		if e.Kind[i] != KindBoss && !s.hasLineOfSight(e.X[i], e.Y[i], p.X, p.Y) {
+			continue
+		}
+		if dist < bestDist {
+			bestDist = dist
+			bx, by = p.X, p.Y
+			found = true
+		}
 	}
-	if e.Kind[i] == KindBoss {
-		return true // le boss flaire le café du joueur de loin, murs ou pas
-	}
-	return s.hasLineOfSight(e.X[i], e.Y[i], px, py)
+	return bx, by, found
+}
+
+// detectsPlayer indique si le monstre détecte le joueur local (solo).
+// Conservé pour compatibilité ; en multi, utiliser focusPlayer.
+func (s *State) detectsPlayer(id EntityID) bool {
+	_, _, ok := s.focusPlayer(id)
+	return ok
 }
 
 // moveEnemyRandom déplace le monstre vers une case voisine franchissable au hasard.

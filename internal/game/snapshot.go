@@ -29,6 +29,8 @@ type Snapshot struct {
 	Log          []string          `json:"log"`
 	Won          bool              `json:"won"`
 	CauseOfDeath string            `json:"causeOfDeath"`
+	PlayerID     int               `json:"playerId"`         // joueur concerné par ce snapshot (0 = solo)
+	Others       []PlayerSnapshot  `json:"others,omitempty"` // autres joueurs visibles (multi)
 }
 
 // PlayerSnapshot est la partie visible du joueur dans un Snapshot.
@@ -163,4 +165,42 @@ func (s *Snapshot) Score() int {
 		score += 1000
 	}
 	return score
+}
+
+// playerSnapshotOf construit le PlayerSnapshot d'un joueur.
+func playerSnapshotOf(p *Player) PlayerSnapshot {
+	return PlayerSnapshot{
+		X: p.X, Y: p.Y, Glyph: p.Glyph,
+		Level: p.Level, XP: p.XP, Gold: p.Gold,
+		HP: p.HP, MaxHP: p.MaxHP,
+		Mana: p.Mana, MaxMana: p.MaxMana,
+		Attack: p.Attack, Defense: p.Defense,
+		WeaponName: p.WeaponName, WeaponBonus: p.WeaponBonus,
+		ArmorName: p.ArmorName, ArmorBonus: p.ArmorBonus,
+		EffectiveAtk: p.EffectiveAttack(), EffectiveDef: p.EffectiveDefense(),
+		Kills: p.Kills, Turns: p.Turns,
+		Inventory: p.Inventory,
+	}
+}
+
+// SnapshotForPlayer construit un snapshot pour un joueur spécifique (multi).
+// Le PlayerSnapshot, le FOV (Visible/Explored) et le PlayerID sont ceux de CE
+// joueur. Les autres joueurs sont exposés dans Others (rendu multi).
+func (s *State) SnapshotForPlayer(p *Player, fov *FOV, playerID int) *Snapshot {
+	snap := s.Snapshot()
+	snap.PlayerID = playerID
+	snap.Player = playerSnapshotOf(p)
+	if fov != nil {
+		snap.Visible = fov.Visible
+		snap.Explored = fov.Explored
+	}
+	// Autres joueurs : tous les joueurs connectés sauf celui-ci (comparaison par ID).
+	snap.Others = make([]PlayerSnapshot, 0, len(s.Others))
+	for _, op := range s.AllPlayers() {
+		if op.ID == p.ID {
+			continue
+		}
+		snap.Others = append(snap.Others, playerSnapshotOf(op))
+	}
+	return snap
 }

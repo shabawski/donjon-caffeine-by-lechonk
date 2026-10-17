@@ -26,6 +26,8 @@ func (m *Model) View() string {
 		return m.viewGameOver()
 	case screenShop:
 		return m.viewShop()
+	case screenConnect:
+		return m.viewConnect()
 	}
 	return ""
 }
@@ -77,10 +79,16 @@ func (m *Model) renderViewport() string {
 }
 
 // glyphAt choisit le glyph et le style d'une case visible :
-// joueur > marchand > monstre > objet > tuile.
+// joueur local > autres joueurs > marchand > monstre > objet > tuile.
 func glyphAt(s *game.Snapshot, x, y int) (rune, lipgloss.Style) {
 	if s.Player.X == x && s.Player.Y == y {
 		return s.Player.Glyph, stylePlayer
+	}
+	// Autres joueurs connectés (multi) : glyph distinct.
+	for _, op := range s.Others {
+		if op.X == x && op.Y == y {
+			return '¶', styleOtherPlayer
+		}
 	}
 	if s.Merchant != nil && s.Merchant.X == x && s.Merchant.Y == y {
 		return s.Merchant.Glyph, styleMerchant

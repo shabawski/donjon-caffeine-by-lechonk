@@ -23,6 +23,9 @@ type newGameMsg struct {
 // errMsg transporte une erreur du client (connexion, lecture).
 type errMsg struct{ err error }
 
+// connectErrMsg signale un échec de connexion TCP (affiché sous le champ).
+type connectErrMsg struct{ err error }
+
 // Update dispatch selon le type de message. Déterministe et sans effet de
 // bord : les transitions d'état dépendent uniquement du message et de l'état.
 // Les actions du joueur envoient un input au serveur et retournent une
@@ -50,6 +53,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case errMsg:
 		return m, tea.Quit
+	case connectErrMsg:
+		m.connectErr = msg.err.Error()
+		return m, nil
 	}
 	return m, nil
 }
@@ -121,6 +127,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case screenGameOver:
 		return m.updateGameOver(msg)
+	case screenConnect:
+		return m.updateConnect(msg)
 	}
 	return m, nil
 }
@@ -132,7 +140,7 @@ func (m *Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.menuCursor--
 		}
 	case "down", "j", "s":
-		if m.menuCursor < 2 {
+		if m.menuCursor < 3 {
 			m.menuCursor++
 		}
 	case "enter":
@@ -140,14 +148,62 @@ func (m *Model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case 0:
 			return m, m.startNewGame() // nouvelle partie solo
 		case 1:
-			m.screen = screenScores
+			// Multijoueur : écran de saisie de l'adresse serveur.
+			m.screen = screenConnect
+			m.connectInput = ""
+			m.connectErr = ""
 		case 2:
+			m.screen = screenScores
+		case 3:
 			return m, tea.Quit
 		}
 	case "q", "esc", "ctrl+c":
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+// updateConnect gère la saisie de l'adresse serveur (host:port) et la connexion.
+func (m *Model) updateConnect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		addr := m.connectInput
+		if addr == "" {
+			return m, nil
+		}
+		return m, m.connectCmd(addr)
+	case tea.KeyEsc:
+		m.screen = screenMenu
+	case tea.KeyBackspace:
+		if n := len(m.connectInput); n > 0 {
+			m.connectInput = m.connectInput[:n-1]
+		}
+	case tea.KeySpace:
+		m.connectInput += " "
+	case tea.KeyRunes:
+		m.connectInput += string(msg.Runes)
+	}
+	return m, nil
+}
+
+// connectCmd tente une connexion TCP au serveur distant (bloquant dans tea.Cmd).
+// En cas de succès, produit un newGameMsg avec le client TCP et le snapshot initial.
+func (m *Model) connectCmd(addr string) tea.Cmd {
+	return func() tea.Msg {
+		c, err := client.NewTCPClient(addr)
+		if err != nil {
+			return connectErrMsg{err}
+		}
+		if err := c.Connect(); err != nil {
+			return connectErrMsg{err}
+		}
+		snap, err := c.NextSnapshot()
+		if err != nil || snap == nil {
+			c.Close()
+			return connectErrMsg{err}
+		}
+		return newGameMsg{client: c, snapshot: snap}
+	}
 }
 
 func (m *Model) updatePlaying(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

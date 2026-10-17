@@ -25,6 +25,7 @@ const (
 // pourra le promouvoir en entité plus tard si besoin.
 type Player struct {
 	Entity
+	ID          int // identifiant unique (0 = solo, >0 en multi)
 	Level       int
 	XP          int
 	Gold        int
@@ -55,9 +56,32 @@ type State struct {
 	Turn         int
 	Won          bool
 	CauseOfDeath string
-	worldWidth   int // dimensions d'étage, conservées entre les étages
+	Others       []*Player // autres joueurs connectés (vide en solo, rempli en multi)
+	worldWidth   int       // dimensions d'étage, conservées entre les étages
 	worldHeight  int
 	floorTurns   int // tours passés sur l'étage courant (reset à chaque étage)
+}
+
+// AllPlayers retourne tous les joueurs connectés (local + autres).
+// Utilisé par l'IA pour le focus (le monstre cible le joueur le plus proche).
+func (s *State) AllPlayers() []*Player {
+	players := make([]*Player, 0, 1+len(s.Others))
+	players = append(players, &s.Player)
+	players = append(players, s.Others...)
+	return players
+}
+
+// playerAt retourne le joueur (local ou autre) à la position (x, y), ou nil.
+func (s *State) playerAt(x, y int) *Player {
+	if s.Player.X == x && s.Player.Y == y {
+		return &s.Player
+	}
+	for _, p := range s.Others {
+		if p.X == x && p.Y == y {
+			return p
+		}
+	}
+	return nil
 }
 
 // NewState crée une nouvelle partie avec la graine donnée et génère l'étage 1

@@ -87,11 +87,52 @@ func TestMenuNavigationWraps(t *testing.T) {
 	if m.menuCursor != 0 {
 		t.Fatalf("curseur attendu 0, got %d", m.menuCursor)
 	}
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 6; i++ {
 		m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
-	if m.menuCursor != 2 {
-		t.Fatalf("curseur plafonné à 2, got %d", m.menuCursor)
+	if m.menuCursor != 3 {
+		t.Fatalf("curseur plafonné à 3 (4 options), got %d", m.menuCursor)
+	}
+}
+
+// TestMenuMultiOuvreConnect vérifie que l'option "Multijoueur (TCP)" ouvre
+// l'écran de saisie de l'adresse serveur.
+func TestMenuMultiOuvreConnect(t *testing.T) {
+	m, _ := newTestModel(42)
+	// Descend jusqu'à l'option 1 (Multijoueur).
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.menuCursor != 1 {
+		t.Fatalf("curseur attendu 1, got %d", m.menuCursor)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.screen != screenConnect {
+		t.Fatalf("enter sur Multijoueur doit ouvrir l'écran connexion, got %v", m.screen)
+	}
+	if v := m.View(); !strings.Contains(v, "host:port") {
+		t.Fatal("l'écran connexion doit afficher le champ host:port")
+	}
+}
+
+// TestConnectSaisieEtRetour vérifie la saisie de l'adresse et le retour menu.
+func TestConnectSaisieEtRetour(t *testing.T) {
+	m, _ := newTestModel(42)
+	m.screen = screenConnect
+	// Saisit "127.0.0.1:27015" caractère par caractère.
+	for _, r := range "127.0.0.1:27015" {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if m.connectInput != "127.0.0.1:27015" {
+		t.Fatalf("adresse saisie incorrecte: %q", m.connectInput)
+	}
+	// Backspace supprime le dernier caractère.
+	m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if m.connectInput != "127.0.0.1:2701" {
+		t.Fatalf("backspace incorrect: %q", m.connectInput)
+	}
+	// Esc retourne au menu.
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.screen != screenMenu {
+		t.Fatal("esc doit ramener au menu depuis l'écran connexion")
 	}
 }
 
